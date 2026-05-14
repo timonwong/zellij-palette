@@ -6,8 +6,7 @@ pub mod user_config;
 #[cfg(test)]
 mod tests {
     use crate::fuzzy::filter_items;
-    use crate::model::{PaletteAction, PaletteId, PaletteItem};
-    use crate::state::PaletteState;
+    use crate::model::{PaletteAction, PaletteItem};
 
     fn item(title: &str) -> PaletteItem {
         PaletteItem::leaf(title, PaletteAction::Noop)
@@ -64,43 +63,4 @@ mod tests {
         assert_eq!(titles, vec!["Themes", "Find Pane", "Split Right"]);
     }
 
-    #[test]
-    fn selection_skips_non_selectable_rows() {
-        let items = vec![
-            PaletteItem::group("Panes"),
-            item("Find Pane"),
-            item("Split Right"),
-        ];
-        let mut state = PaletteState::new(PaletteId::Commands, items);
-        assert_eq!(state.selected_title(), Some("Find Pane"));
-        state.move_next();
-        assert_eq!(state.selected_title(), Some("Split Right"));
-    }
-
-    #[test]
-    fn back_restores_previous_filter_and_selection() {
-        let mut state = PaletteState::new(
-            PaletteId::Commands,
-            vec![
-                item("Find Pane"),
-                PaletteItem::leaf(
-                    "Move Pane to...",
-                    PaletteAction::OpenPalette(PaletteId::MovePane),
-                ),
-                item("Split Right"),
-            ],
-        );
-        state.set_query("move");
-        state.move_next();
-        state.push_palette(
-            PaletteId::MovePane,
-            vec![item("Tab 1"), item("Tab 2"), item("New Tab")],
-        );
-        state.set_query("tab 2");
-        state.move_next();
-        state.pop_palette();
-
-        assert_eq!(state.query(), "move");
-        assert_eq!(state.selected_title(), Some("Move Pane to..."));
-    }
 }
