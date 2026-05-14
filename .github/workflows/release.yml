@@ -6,58 +6,166 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Existing tag to release (e.g. v0.1.0). Must already point at the commit you want to ship.'
+      version:
+        description: 'Version to cut, e.g. 0.2.0 or v0.2.0 (supports -rc.N suffix). Creates the prep commit, tag, and release in one run.'
         required: true
         type: string
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  prepare:
+    name: Prepare release commit and tag
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+    steps:
+      - name: Resolve and validate version
+        id: resolve
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION="${INPUT_VERSION#v}"
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$ ]]; then
+            echo "::error::Version '${INPUT_VERSION}' must match X.Y.Z (optionally with a -prerelease or .build suffix)."
+            exit 1
+          fi
+          TAG="v${VERSION}"
+          PRERELEASE=false
+          if [[ "${TAG}" == *-* ]]; then
+            PRERELEASE=true
+          fi
+          {
+            echo "tag=${TAG}"
+            echo "version=${VERSION}"
+            echo "prerelease=${PRERELEASE}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Reject if tag already exists
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags https://github.com/${{ github.repository }}.git "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists on origin. Pick a new version or run the workflow against the existing tag if you only need to re-publish."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git author
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Install Rust (stable, wasm + host targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-wasip1, x86_64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: prepare
+
+      - name: Install openssl-sys deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libssl-dev
+
+      - name: Promote CHANGELOG and bump Cargo.toml
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: python3 scripts/release-prep.py --version "${VERSION}"
+
+      - name: Sync Cargo.lock to bumped Cargo.toml
+        run: cargo check --offline
+
+      - name: Gate — cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Gate — cargo clippy (wasm)
+        run: cargo clippy --target wasm32-wasip1 --all-targets -- -D warnings
+
+      - name: Gate — cargo test (host)
+        run: cargo test --lib --target x86_64-unknown-linux-gnu
+
+      - name: Commit, tag, and push
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git add Cargo.toml Cargo.lock CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "::error::No staged changes after prep — Cargo.toml and CHANGELOG were already at ${VERSION}? Aborting to avoid an empty release commit."
+            exit 1
+          fi
+          git commit -m "chore(release): cut ${VERSION}"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin "HEAD:refs/heads/main" "${TAG}"
+
   release:
     name: Build and publish release
+    needs: [prepare]
+    if: ${{ !cancelled() && (needs.prepare.result == 'success' || needs.prepare.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - name: Resolve target ref and version
         id: resolve
         env:
-          INPUT_TAG: ${{ inputs.tag }}
+          PREPARE_TAG: ${{ needs.prepare.outputs.tag }}
+          PREPARE_VERSION: ${{ needs.prepare.outputs.version }}
+          PREPARE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            VERSION="${INPUT_TAG}"
+          if [ -n "${PREPARE_TAG}" ]; then
+            VERSION="${PREPARE_VERSION}"
+            TAG="${PREPARE_TAG}"
+            PRERELEASE="${PREPARE_PRERELEASE}"
           else
-            VERSION="${GITHUB_REF_NAME}"
-          fi
-          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$ ]]; then
-            echo "::error::Refusing to release: tag '${VERSION}' must match vMAJOR.MINOR.PATCH (optionally with a -prerelease / .build suffix)."
-            exit 1
-          fi
-          VERSION_NUM="${VERSION#v}"
-          PRERELEASE=false
-          if [[ "${VERSION}" == *-* ]]; then
-            PRERELEASE=true
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+            if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$ ]]; then
+              echo "::error::Refusing to release: tag '${TAG}' must match vMAJOR.MINOR.PATCH (optionally with a -prerelease / .build suffix)."
+              exit 1
+            fi
+            PRERELEASE=false
+            if [[ "${TAG}" == *-* ]]; then
+              PRERELEASE=true
+            fi
           fi
           {
+            echo "tag=${TAG}"
             echo "version=${VERSION}"
-            echo "version_num=${VERSION_NUM}"
             echo "prerelease=${PRERELEASE}"
           } >> "${GITHUB_OUTPUT}"
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.resolve.outputs.version }}
+          ref: ${{ steps.resolve.outputs.tag }}
 
       - name: Verify Cargo.toml version matches tag
         run: |
           set -euo pipefail
           CARGO_VERSION=$(awk -F\" '/^version = "/ { print $2; exit }' Cargo.toml)
-          if [ "${CARGO_VERSION}" != "${{ steps.resolve.outputs.version_num }}" ]; then
-            echo "::error::Cargo.toml version (${CARGO_VERSION}) does not match tag (${{ steps.resolve.outputs.version_num }}). Bump Cargo.toml before tagging."
+          if [ "${CARGO_VERSION}" != "${{ steps.resolve.outputs.version }}" ]; then
+            echo "::error::Cargo.toml version (${CARGO_VERSION}) does not match tag (${{ steps.resolve.outputs.version }})."
             exit 1
           fi
 
@@ -74,7 +182,6 @@ jobs:
         run: cargo build --release
 
       - name: Stage release artifacts
-        id: artifacts
         run: |
           set -euo pipefail
           cp target/wasm32-wasip1/release/zellij-palette.wasm ./zellij-palette.wasm
@@ -84,14 +191,15 @@ jobs:
       - name: Extract CHANGELOG section
         run: |
           set -euo pipefail
-          VERSION_NUM='${{ steps.resolve.outputs.version_num }}'
-          awk -v ver="${VERSION_NUM}" '
+          VERSION='${{ steps.resolve.outputs.version }}'
+          awk -v ver="${VERSION}" '
             $0 ~ "^## \\["ver"\\]" { flag=1; next }
             flag && /^## \[/ { exit }
+            flag && /^\[[^[:space:]]+\]: / { exit }
             flag { print }
           ' CHANGELOG.md > RELEASE_NOTES.md
           if [ ! -s RELEASE_NOTES.md ]; then
-            echo "::error::No CHANGELOG.md section found for version ${VERSION_NUM}. Rename [Unreleased] to [${VERSION_NUM}] - YYYY-MM-DD before tagging."
+            echo "::error::No CHANGELOG.md section found for version ${VERSION}."
             exit 1
           fi
           echo '--- RELEASE_NOTES.md ---'
@@ -100,8 +208,8 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.resolve.outputs.version }}
-          name: ${{ steps.resolve.outputs.version }}
+          tag_name: ${{ steps.resolve.outputs.tag }}
+          name: ${{ steps.resolve.outputs.tag }}
           body_path: RELEASE_NOTES.md
           prerelease: ${{ steps.resolve.outputs.prerelease == 'true' }}
           fail_on_unmatched_files: true
