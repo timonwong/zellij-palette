@@ -1,5 +1,6 @@
 [tools]
 rust = { version = "1.86", components = "rustfmt,clippy", targets = "wasm32-wasip1" }
+git-cliff = "2.13.1"
 
 [tasks.build]
 description = "Build the release WASM plugin"
@@ -21,3 +22,11 @@ run = "cargo fmt --all"
 [tasks.clippy]
 description = "Lint host-side targets with warnings denied"
 run = 'HOST_TRIPLE="$(rustc -vV | sed -n "s/^host: //p")"; cargo clippy --all-targets --target "$HOST_TRIPLE" -- -D warnings'
+
+[tasks.changelog]
+description = "Preview the unreleased CHANGELOG section (does not write to disk)"
+run = "git-cliff --unreleased --strip all"
+
+[tasks."changelog:write"]
+description = "Regenerate CHANGELOG.md from git history (release-prep uses this; do not run by hand on main)"
+run = "git-cliff -o CHANGELOG.md"

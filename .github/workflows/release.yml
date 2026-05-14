@@ -73,6 +73,11 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
       - name: Install Rust (stable, wasm + host targets)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -88,7 +93,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends pkg-config libssl-dev
 
-      - name: Promote CHANGELOG and bump Cargo.toml
+      - name: Bump Cargo.toml and regenerate CHANGELOG.md
         env:
           VERSION: ${{ steps.resolve.outputs.version }}
         run: python3 scripts/release-prep.py --version "${VERSION}"

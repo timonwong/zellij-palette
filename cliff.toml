@@ -1,10 +1,53 @@
-# Changelog
+# git-cliff configuration for zellij-palette.
+#
+# CHANGELOG.md is fully regenerated from commit history via:
+#   git cliff --tag vX.Y.Z -o CHANGELOG.md
+#
+# Conventional Commit types map to Keep a Changelog sections:
+#   feat        -> Added
+#   fix         -> Fixed
+#   perf        -> Changed
+#   refactor    -> Changed
+#   style       -> Changed
+#   revert      -> Changed
+#   docs        -> Changed
+#   chore/ci/test/build -> skipped (not user-visible)
+#
+# The 0.1.0 section and its footer links are hand-written and lives in
+# `footer` below; `skip_tags` keeps git-cliff from regenerating it from
+# the v0.1.0 commit range (those commits predate the Conventional
+# Commits discipline and would not reproduce the original notes).
+
+[changelog]
+header = """# Changelog
 
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+"""
 
+# Rendered once per release, newest first.
+body = """
+
+{% if version -%}
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+## [Unreleased]
+{% endif -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+
+{% for commit in commits -%}
+- {{ commit.message | split(pat="\\n") | first | trim }}
+{% endfor -%}
+{% endfor -%}
+"""
+
+# Static 0.1.0 section (pre-Conventional-Commits) and dynamic footer
+# links. The compare/tag link list is regenerated from `releases` on
+# every run so it always reflects the current tag set.
+footer = """
 
 ## [0.1.0] - 2026-05-14
 
@@ -26,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expanded against the session `$HOME`. When unset, the User Themes
   group is hidden and only built-ins are listed.
 - Theme names interpolated into the `reconfigure(...)` KDL fragment are
-  now escaped (`"` and `\`), so a user-supplied theme name with quotes
+  now escaped (`"` and `\\`), so a user-supplied theme name with quotes
   or backslashes can no longer break out of the KDL string value.
 - User config files can now be authored as TOML, YAML, or JSON. When
   multiple variants of the same name exist, the loader prefers TOML,
@@ -90,6 +133,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unused `last_cols` field on `State` (introduced and removed within the
   same Unreleased cycle).
 
-[Unreleased]: https://github.com/timonwong/zellij-palette/compare/v0.1.0...HEAD
+{% set latest_version = "v0.1.0" -%}
+{% for release in releases -%}
+{% if release.version -%}
+{% set_global latest_version = release.version -%}
+{% break -%}
+{% endif -%}
+{% endfor -%}
+[Unreleased]: https://github.com/timonwong/zellij-palette/compare/{{ latest_version }}...HEAD
+{% for release in releases -%}
+{% if release.version and release.version != "v0.1.0" -%}
+[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/timonwong/zellij-palette/releases/tag/{{ release.version }}
+{% endif -%}
+{% endfor -%}
 [0.1.0]: https://github.com/timonwong/zellij-palette/releases/tag/v0.1.0
+"""
 
+trim = false
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+filter_commits = true
+tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+"
+skip_tags = "^v0\\.1\\.0$"
+topo_order = false
+sort_commits = "oldest"
+
+commit_parsers = [
+  { message = "^chore\\(release\\):", skip = true },
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Changed" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^style", group = "Changed" },
+  { message = "^revert", group = "Changed" },
+  { message = "^docs", group = "Changed" },
+  { message = "^chore", skip = true },
+  { message = "^ci", skip = true },
+  { message = "^build", skip = true },
+  { message = "^test", skip = true },
+]
