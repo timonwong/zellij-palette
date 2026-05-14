@@ -45,6 +45,7 @@ struct State {
     command_results: BTreeMap<String, Vec<PaletteItem>>,
     mode_info: Option<ModeInfo>,
     home_dir: Option<PathBuf>,
+    caller_cwd: Option<PathBuf>,
     root_category: Option<String>,
     permission_state: PermissionState,
     message: Option<String>,
@@ -61,6 +62,7 @@ impl ZellijPlugin for State {
         self.active_palette = Some(active_palette_from_config(
             configuration.get("palette").map(String::as_str),
         ));
+        self.caller_cwd = configuration.get("caller_cwd").map(PathBuf::from);
         self.root_category = configuration.get("category").cloned();
         self.permission_state = PermissionState::Pending;
         self.message =
@@ -610,9 +612,7 @@ impl State {
 
     fn command_palette_base_items(&self) -> Vec<PaletteItem> {
         let caller = self.caller_pane_target();
-        let caller_cwd = caller
-            .as_ref()
-            .and_then(|target| get_pane_cwd(pane_id(target)).ok());
+        let caller_cwd = self.caller_cwd.clone();
         let active_tab_id = self.current_tab_id().unwrap_or_default();
         let mut items = vec![
             PaletteItem::group("Panes"),
@@ -870,10 +870,7 @@ impl State {
         };
 
         let base_commands = self.command_palette_base_items();
-        let caller_cwd = self
-            .caller_pane_target()
-            .as_ref()
-            .and_then(|target| get_pane_cwd(pane_id(target)).ok());
+        let caller_cwd = self.caller_cwd.clone();
 
         let mut items = Vec::new();
         if !custom_palette.from.is_empty() || custom_palette.from_category.is_some() {
