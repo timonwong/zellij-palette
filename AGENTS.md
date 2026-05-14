@@ -81,7 +81,7 @@ the permission gate.
 
 ## Coding conventions
 
-- Edition 2024 (`Cargo.toml`); minimum Rust toolchain ≥ 1.85.
+- Edition 2024 (`Cargo.toml`); minimum Rust toolchain ≥ 1.95.
 - Prefer pushing logic into the pure modules and unit-testing it there
   rather than growing `State`.
 - No "guess" / placeholder functions that return a hard-coded constant

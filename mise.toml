@@ -1,5 +1,5 @@
 [tools]
-rust = { version = "1.86", components = "rustfmt,clippy", targets = "wasm32-wasip1" }
+rust = { version = "1.95", components = "rustfmt,clippy", targets = "wasm32-wasip1" }
 
 [tasks.build]
 description = "Build the release WASM plugin"

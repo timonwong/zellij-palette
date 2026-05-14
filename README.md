@@ -66,9 +66,9 @@ The Rust toolchain, `wasm32-wasip1` target, `rustfmt`, and `clippy`
 are all declared in `mise.toml`, so `mise install` prepares the full
 repo toolchain.
 
-If you already had Rust 1.86 installed before this file existed, run
+If your local Rust install still points at an older repo toolchain, run
 `mise install -f rust` once so `mise` can reconcile the target and
-components onto the existing toolchain.
+components onto the updated toolchain.
 
 ## Bind It In Zellij
 
