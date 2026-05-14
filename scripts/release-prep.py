@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Promote CHANGELOG and bump Cargo.toml for a new release.
+"""Bump Cargo.toml and regenerate CHANGELOG.md for a new release.
 
 Used by .github/workflows/release.yml on workflow_dispatch.
 
-Idempotent: re-running after a successful promotion is a no-op (exits 0,
-prints "already promoted"). Fails closed on empty [Unreleased] or
-malformed version input.
+Idempotent: re-running after a successful prep is a no-op (exits 0,
+prints "already prepared"). Fails closed on malformed version input or
+on a CHANGELOG that lacks any user-visible commits to release.
 """
 
 from __future__ import annotations
@@ -14,9 +14,10 @@ import argparse
 import datetime as _dt
 import pathlib
 import re
+import shutil
+import subprocess
 import sys
 
-REPO = "timonwong/zellij-palette"
 SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+([.\-].+)?$")
 
 
@@ -44,52 +45,39 @@ def compute_cargo_bump(text: str, version: str) -> str | None:
     return text[: m.start(1)] + version + text[m.end(1) :]
 
 
-def compute_changelog_promotion(text: str, version: str, today: str) -> str | None:
-    """Return promoted CHANGELOG, or None if `[version]` section already exists."""
-    section_header = f"## [{version}]"
-    if re.search(
-        rf"^{re.escape(section_header)}(?:[ \t]|$)", text, flags=re.MULTILINE
-    ):
-        return None
+def regenerate_changelog(repo_root: pathlib.Path, version: str) -> bool:
+    """Run git-cliff to rewrite CHANGELOG.md.
 
-    unreleased_re = re.compile(r"^## \[Unreleased\][ \t]*$", flags=re.MULTILINE)
-    m = unreleased_re.search(text)
-    if not m:
-        die("CHANGELOG.md has no `## [Unreleased]` section header")
+    Returns True if CHANGELOG.md actually changed on disk. Dies if the
+    resulting file does not contain a `## [<version>] - …` section —
+    i.e. there are no user-visible commits to release.
+    """
+    if shutil.which("git-cliff") is None:
+        die("`git-cliff` not found on PATH — install it or use orhun/git-cliff-action in CI")
 
-    next_header = re.search(r"^## \[", text[m.end():], flags=re.MULTILINE)
-    body_end = m.end() + next_header.start() if next_header else len(text)
-    body = text[m.end():body_end].strip()
-    if not body:
-        die(
-            "[Unreleased] section is empty — add release notes before "
-            "running the prep workflow"
-        )
-
-    insertion = f"\n\n## [{version}] - {today}"
-    new_text = text[: m.end()] + insertion + text[m.end():]
-
-    footer_re = re.compile(
-        rf"^(\[Unreleased\]: https://github\.com/{re.escape(REPO)}/compare/)"
-        r"(\S+?)\.\.\.HEAD\s*$",
-        flags=re.MULTILINE,
+    changelog = repo_root / "CHANGELOG.md"
+    before = changelog.read_text() if changelog.is_file() else ""
+    subprocess.run(
+        [
+            "git-cliff",
+            "--config",
+            str(repo_root / "cliff.toml"),
+            "--tag",
+            f"v{version}",
+            "-o",
+            str(changelog),
+        ],
+        check=True,
+        cwd=repo_root,
     )
-    fm = footer_re.search(new_text)
-    if not fm:
+    after = changelog.read_text()
+    if f"## [{version}] - " not in after:
         die(
-            "could not find the `[Unreleased]: …/compare/<ref>...HEAD` footer "
-            "link — promote the CHANGELOG by hand or fix the footer convention"
+            f"CHANGELOG.md has no `## [{version}] - …` section after running "
+            "git-cliff — there are no user-visible commits to release. Add "
+            "feat/fix/refactor/docs commits or pick a different version."
         )
-    new_footer = f"[Unreleased]: https://github.com/{REPO}/compare/v{version}...HEAD"
-    new_text = new_text[: fm.start()] + new_footer + new_text[fm.end():]
-
-    insert_at = fm.start() + len(new_footer)
-    tag_link = f"\n[{version}]: https://github.com/{REPO}/releases/tag/v{version}"
-    new_text = new_text[: insert_at] + tag_link + new_text[insert_at:]
-
-    if not new_text.endswith("\n"):
-        new_text += "\n"
-    return new_text
+    return before != after
 
 
 def main() -> int:
@@ -105,39 +93,38 @@ def main() -> int:
     parser.add_argument(
         "--date",
         default=_dt.date.today().isoformat(),
-        help="Release date in YYYY-MM-DD (default: today, UTC)",
+        help="Unused, retained for backwards compat with old CI invocations",
     )
     args = parser.parse_args()
 
     version = normalize_version(args.version)
-    root = pathlib.Path(args.repo_root)
+    root = pathlib.Path(args.repo_root).resolve()
     cargo = root / "Cargo.toml"
-    changelog = root / "CHANGELOG.md"
+    cliff = root / "cliff.toml"
 
     if not cargo.is_file():
         die(f"{cargo} not found")
-    if not changelog.is_file():
-        die(f"{changelog} not found")
+    if not cliff.is_file():
+        die(f"{cliff} not found")
+
+    # Regenerate CHANGELOG first — it fails closed if there are no
+    # user-visible commits to release, and we don't want to leave a
+    # half-bumped Cargo.toml behind on failure.
+    changelog_changed = regenerate_changelog(root, version)
 
     new_cargo = compute_cargo_bump(cargo.read_text(), version)
-    new_changelog = compute_changelog_promotion(
-        changelog.read_text(), version, args.date
-    )
-
     if new_cargo is not None:
         cargo.write_text(new_cargo)
-    if new_changelog is not None:
-        changelog.write_text(new_changelog)
 
     actions = []
     if new_cargo is not None:
         actions.append("bumped Cargo.toml")
-    if new_changelog is not None:
-        actions.append("promoted CHANGELOG")
+    if changelog_changed:
+        actions.append("regenerated CHANGELOG.md")
     if actions:
         print(f"{' and '.join(actions)} for {version}")
     else:
-        print(f"already promoted to {version}; no changes made")
+        print(f"already prepared for {version}; no changes made")
     print(f"version={version}")
     return 0
 
