@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.1.1-cliff-test] - 2026-05-14
+
+### Fixed
+
+- restore select pane navigation (#9)
+
 ## [0.1.0] - 2026-05-14
 
 ### Added
@@ -90,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unused `last_cols` field on `State` (introduced and removed within the
   same Unreleased cycle).
 
-[Unreleased]: https://github.com/timonwong/zellij-palette/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/timonwong/zellij-palette/compare/v0.1.1-cliff-test...HEAD
+[0.1.1-cliff-test]: https://github.com/timonwong/zellij-palette/releases/tag/v0.1.1-cliff-test
 [0.1.0]: https://github.com/timonwong/zellij-palette/releases/tag/v0.1.0
 
