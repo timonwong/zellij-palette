@@ -9,7 +9,7 @@ It opens as a Zellij plugin pane, lets you fuzzy-search actions, and dispatches 
 - Searchable `Commands` palette with pane, tab, session, and appearance actions
 - `Find Pane` palette that jumps across sessions, tabs, and panes
 - `Move Pane` palette that sends the caller pane into another tab or a new tab
-- `Themes` palette grouped into **Theme Mode** (toggle / use dark / use light), **Built-in Themes** (the 41 themes Zellij 0.44 ships), and **User Themes** (anything under `~/.config/zellij/themes/*.kdl`). A same-named user theme shadows the built-in entry.
+- `Themes` palette grouped into **Theme Mode** (toggle / use dark / use light), **Built-in Themes** (the 41 themes Zellij 0.44 ships), and **User Themes** (any `*.kdl` under the directory passed via the `theme_dir` plugin parameter). A same-named user theme shadows the built-in entry.
 - Custom commands from `~/.config/zellij-palette/commands.toml`
 - Custom palettes from `~/.config/zellij-palette/palettes/*.toml`
 - `hidden.toml`, `shortcuts.toml`, and `aliases.toml` overlays
@@ -41,6 +41,7 @@ plugins {
     zellij-palette location="file:/ABS/PATH/TO/zellij-palette/target/wasm32-wasip1/release/zellij-palette.wasm"
     zellij-palette-themes location="file:/ABS/PATH/TO/zellij-palette/target/wasm32-wasip1/release/zellij-palette.wasm" {
         palette "themes"
+        theme_dir "~/.config/zellij/themes"
     }
     zellij-palette-tools location="file:/ABS/PATH/TO/zellij-palette/target/wasm32-wasip1/release/zellij-palette.wasm" {
         category "Tools"
@@ -71,10 +72,11 @@ keybinds {
 }
 ```
 
-The plugin reads two launch keys from the alias configuration block:
+The plugin reads three launch keys from the alias configuration block:
 
 - `palette`: `commands`, `find-pane`, `move-pane`, `sessions`, `themes`, or a custom palette filename
 - `category`: filters the root commands palette to one category such as `Tools`
+- `theme_dir`: path to a directory of user-defined `*.kdl` theme files. When set, those names appear under the **User Themes** group in the Themes palette and shadow same-named built-ins. Accepts absolute paths or `~/...` (expanded against `$HOME` from the Zellij session). When unset, only the 41 built-in themes are listed.
 
 There is a ready-to-edit example in [examples/config.kdl](examples/config.kdl).
 
@@ -92,7 +94,7 @@ The plugin tracks the caller pane through Zellij's pane history, so actions such
 
 Picking a theme dispatches `reconfigure("theme \"<name>\"", false)` against the live Zellij session. The change is immediate — no restart, no resurrect — and is *not* persisted to `~/.config/zellij/config.kdl`. Restarting Zellij brings back whatever theme `config.kdl` declares.
 
-The built-in theme list is hard-coded to match the 41 themes Zellij 0.44 bakes into its binary via `include_dir!`; the zellij-tile 0.44 SDK does not expose an API to enumerate them at runtime. User themes from `~/.config/zellij/themes/*.kdl` are scanned at load time and shadow same-named built-ins.
+The built-in theme list is hard-coded to match the 41 themes Zellij 0.44 bakes into its binary via `include_dir!`; the zellij-tile 0.44 SDK does not expose an API to enumerate them at runtime. User themes are scanned from whatever directory the `theme_dir` plugin parameter points at (see the launch-keys list above) — the plugin does not try to mirror Zellij's `ZELLIJ_CONFIG_DIR` / `theme_dir` config / XDG-fallback resolution, since that would require parsing `config.kdl`. Pass the path explicitly. User entries shadow same-named built-ins.
 
 `Toggle Dark / Light`, `Use Dark Theme`, and `Use Light Theme` map to Zellij's real `Action::ToggleTheme`, `Action::SetDarkTheme`, and `Action::SetLightTheme` — but those only do something visible when `theme_dark` *and* `theme_light` are both set in your Zellij config. Without that pair, they silently no-op.
 

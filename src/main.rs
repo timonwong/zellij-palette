@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use zellij_palette::fuzzy::filter_items;
@@ -96,6 +96,7 @@ struct State {
     mode_info: Option<ModeInfo>,
     home_dir: Option<PathBuf>,
     root_category: Option<String>,
+    user_theme_dir: Option<String>,
     permission_state: PermissionState,
     message: Option<String>,
     last_rows: usize,
@@ -112,6 +113,11 @@ impl ZellijPlugin for State {
             configuration.get("palette").map(String::as_str),
         ));
         self.root_category = configuration.get("category").cloned();
+        self.user_theme_dir = configuration
+            .get("theme_dir")
+            .map(String::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
         self.permission_state = PermissionState::Pending;
         self.message =
             Some("Approve the Zellij permission prompt to enable palette actions".to_owned());
@@ -207,7 +213,11 @@ impl State {
             let env_vars = get_session_environment_variables();
             self.home_dir = env_vars.get("HOME").map(PathBuf::from);
         }
-        self.user_config = load_user_config(self.home_dir.as_deref());
+        let theme_dir = self
+            .user_theme_dir
+            .as_deref()
+            .map(|raw| expand_user_path(raw, self.home_dir.as_deref()));
+        self.user_config = load_user_config(self.home_dir.as_deref(), theme_dir.as_deref());
     }
 
     fn refresh_sessions(&mut self) {
@@ -1111,6 +1121,22 @@ fn active_palette_from_config(palette: Option<&str>) -> ActivePalette {
         "themes" => ActivePalette::BuiltIn(PaletteId::Themes),
         custom => ActivePalette::Custom(custom.to_owned()),
     }
+}
+
+// The plugin lives in a wasm sandbox, so `~` is not expanded by the
+// shell or the host. Accept `~` and `~/...` against the HOME we got
+// from `get_session_environment_variables()`; pass anything else
+// through unchanged.
+fn expand_user_path(raw: &str, home: Option<&Path>) -> PathBuf {
+    if raw == "~" {
+        return home
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(raw));
+    }
+    if let (Some(rest), Some(home)) = (raw.strip_prefix("~/"), home) {
+        return home.join(rest);
+    }
+    PathBuf::from(raw)
 }
 
 fn pane_id(target: &PaneTarget) -> PaneId {

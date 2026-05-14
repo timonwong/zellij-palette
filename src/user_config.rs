@@ -83,9 +83,17 @@ struct RawCustomPalette {
     items: Option<Vec<RawPaletteItem>>,
 }
 
-pub fn load_user_config(home: Option<&Path>) -> UserConfig {
+pub fn load_user_config(home: Option<&Path>, theme_dir: Option<&Path>) -> UserConfig {
+    // theme_dir is independent of home — a user can point at a themes
+    // dir even when HOME is unavailable. Everything else still keys off
+    // ~/.config/zellij-palette/.
+    let theme_names = theme_dir.map(load_theme_names).unwrap_or_default();
+
     let Some(home) = home else {
-        return UserConfig::default();
+        return UserConfig {
+            theme_names,
+            ..UserConfig::default()
+        };
     };
 
     let config_root = home.join(".config").join("zellij-palette");
@@ -94,7 +102,6 @@ pub fn load_user_config(home: Option<&Path>) -> UserConfig {
     let shortcut_overrides = load_config_file(&config_root, "shortcuts").unwrap_or_default();
     let alias_overrides = load_config_file(&config_root, "aliases").unwrap_or_default();
     let hidden_titles = load_hidden(&config_root).into_iter().collect();
-    let theme_names = load_theme_names(&home.join(".config").join("zellij").join("themes"));
 
     UserConfig {
         commands,
@@ -521,13 +528,10 @@ mod tests {
             r##"{"title":"Tools","fromCategory":"Tools","icon":"󰆍","iconColor":"#ffaa00","grouped":true,"emptyText":"No tools","action":{"popup":"echo {}"}}"##,
         )
         .unwrap();
-        fs::write(
-            home.join(".config").join("zellij").join("themes").join("nord.kdl"),
-            "theme nord {}",
-        )
-        .unwrap();
+        let theme_dir = home.join(".config").join("zellij").join("themes");
+        fs::write(theme_dir.join("nord.kdl"), "theme nord {}").unwrap();
 
-        let user_config = load_user_config(Some(&home));
+        let user_config = load_user_config(Some(&home), Some(&theme_dir));
 
         assert_eq!(user_config.commands.len(), 1);
         assert_eq!(user_config.commands[0].category.as_deref(), Some("Tools"));
@@ -554,6 +558,27 @@ mod tests {
         assert_eq!(tools.default_icon_color.as_deref(), Some("#ffaa00"));
         assert_eq!(tools.grouped, Some(true));
         assert_eq!(tools.empty_text.as_deref(), Some("No tools"));
+    }
+
+    // Proves the old implicit `~/.config/zellij/themes` scan is gone:
+    // theme files sitting at that path no longer reach the palette when
+    // the caller passes `None` for theme_dir.
+    #[test]
+    fn theme_dir_must_be_passed_explicitly() {
+        let home = temp_home("theme-dir-explicit");
+        let legacy_theme_dir = home.join(".config").join("zellij").join("themes");
+        fs::create_dir_all(&legacy_theme_dir).unwrap();
+        fs::write(legacy_theme_dir.join("nord.kdl"), "theme nord {}").unwrap();
+        fs::write(legacy_theme_dir.join("dracula.kdl"), "theme dracula {}").unwrap();
+
+        let without_dir = load_user_config(Some(&home), None);
+        assert!(
+            without_dir.theme_names.is_empty(),
+            "theme files at the legacy path must not leak in when theme_dir is None",
+        );
+
+        let with_dir = load_user_config(Some(&home), Some(&legacy_theme_dir));
+        assert_eq!(with_dir.theme_names, vec!["dracula".to_owned(), "nord".to_owned()]);
     }
 
     #[test]
@@ -604,7 +629,7 @@ action = { popup = "echo {}" }
         )
         .unwrap();
 
-        let user_config = load_user_config(Some(&home));
+        let user_config = load_user_config(Some(&home), None);
 
         assert_eq!(user_config.commands.len(), 1);
         assert_eq!(user_config.commands[0].category.as_deref(), Some("Tools"));
@@ -657,7 +682,7 @@ action = { popup = "echo {}" }
         )
         .unwrap();
 
-        let user_config = load_user_config(Some(&home));
+        let user_config = load_user_config(Some(&home), None);
 
         // TOML wins over both YAML and JSON.
         assert_eq!(
@@ -685,7 +710,7 @@ action = { popup = "echo {}" }
         )
         .unwrap();
 
-        let user_config = load_user_config(Some(&home));
+        let user_config = load_user_config(Some(&home), None);
 
         assert!(user_config.shortcut_overrides.is_empty());
     }
@@ -723,7 +748,7 @@ action = { popup = "echo {}" }
         )
         .unwrap();
 
-        let user_config = load_user_config(Some(&home));
+        let user_config = load_user_config(Some(&home), None);
 
         assert_eq!(
             user_config.custom_palettes.get("tools").and_then(|p| p.title.as_deref()),
@@ -759,7 +784,7 @@ action = { popup = "echo {}" }
         )
         .unwrap();
 
-        let user_config = load_user_config(Some(&home));
+        let user_config = load_user_config(Some(&home), None);
 
         assert!(user_config.commands.iter().any(|item| item.title == "lazygit"));
         assert!(user_config.commands.iter().any(|item| item.title == "Tail logs"));
