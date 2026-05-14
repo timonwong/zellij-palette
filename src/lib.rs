@@ -64,5 +64,4 @@ mod tests {
         let titles: Vec<_> = filtered.iter().map(|item| item.title.as_str()).collect();
         assert_eq!(titles, vec!["Themes", "Find Pane", "Split Right"]);
     }
-
 }

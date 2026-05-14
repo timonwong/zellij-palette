@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g. v0.1.0). Must already point at the commit you want to ship.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target ref and version
+        id: resolve
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            VERSION="${INPUT_TAG}"
+          else
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$ ]]; then
+            echo "::error::Refusing to release: tag '${VERSION}' must match vMAJOR.MINOR.PATCH (optionally with a -prerelease / .build suffix)."
+            exit 1
+          fi
+          VERSION_NUM="${VERSION#v}"
+          PRERELEASE=false
+          if [[ "${VERSION}" == *-* ]]; then
+            PRERELEASE=true
+          fi
+          {
+            echo "version=${VERSION}"
+            echo "version_num=${VERSION_NUM}"
+            echo "prerelease=${PRERELEASE}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.resolve.outputs.version }}
+
+      - name: Verify Cargo.toml version matches tag
+        run: |
+          set -euo pipefail
+          CARGO_VERSION=$(awk -F\" '/^version = "/ { print $2; exit }' Cargo.toml)
+          if [ "${CARGO_VERSION}" != "${{ steps.resolve.outputs.version_num }}" ]; then
+            echo "::error::Cargo.toml version (${CARGO_VERSION}) does not match tag (${{ steps.resolve.outputs.version_num }}). Bump Cargo.toml before tagging."
+            exit 1
+          fi
+
+      - name: Install Rust (stable, wasm target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+
+      - name: cargo build --release
+        run: cargo build --release
+
+      - name: Stage release artifacts
+        id: artifacts
+        run: |
+          set -euo pipefail
+          cp target/wasm32-wasip1/release/zellij-palette.wasm ./zellij-palette.wasm
+          sha256sum zellij-palette.wasm > zellij-palette.wasm.sha256
+          ls -la zellij-palette.wasm zellij-palette.wasm.sha256
+
+      - name: Extract CHANGELOG section
+        run: |
+          set -euo pipefail
+          VERSION_NUM='${{ steps.resolve.outputs.version_num }}'
+          awk -v ver="${VERSION_NUM}" '
+            $0 ~ "^## \\["ver"\\]" { flag=1; next }
+            flag && /^## \[/ { exit }
+            flag { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "::error::No CHANGELOG.md section found for version ${VERSION_NUM}. Rename [Unreleased] to [${VERSION_NUM}] - YYYY-MM-DD before tagging."
+            exit 1
+          fi
+          echo '--- RELEASE_NOTES.md ---'
+          cat RELEASE_NOTES.md
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve.outputs.version }}
+          name: ${{ steps.resolve.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          prerelease: ${{ steps.resolve.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: true
+          files: |
+            zellij-palette.wasm
+            zellij-palette.wasm.sha256

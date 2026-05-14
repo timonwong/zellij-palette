@@ -464,11 +464,7 @@ impl State {
         let mut shell = CommandToRun::new_with_args("sh", vec!["-lc", command.command.as_str()]);
         shell.cwd = command.cwd.clone();
         if floating {
-            open_command_pane_floating(
-                shell,
-                floating_coordinates(coordinates),
-                BTreeMap::new(),
-            );
+            open_command_pane_floating(shell, floating_coordinates(coordinates), BTreeMap::new());
         } else {
             run_command_with_env_variables_and_cwd(
                 &["sh", "-lc", &command.command],
@@ -664,7 +660,8 @@ impl State {
         if let Some(category) = &self.root_category {
             let mut filtered = vec![PaletteItem::group(category.clone())];
             filtered.extend(
-                items.into_iter()
+                items
+                    .into_iter()
                     .filter(|item| item.category.as_ref() == Some(category)),
             );
             return filtered;
@@ -1083,11 +1080,11 @@ fn group_items_by_category(items: Vec<PaletteItem>) -> Vec<PaletteItem> {
             grouped.push(item);
             continue;
         }
-        if let Some(category) = &item.category {
-            if last_category.as_deref() != Some(category.as_str()) {
-                grouped.push(PaletteItem::group(category.clone()));
-                last_category = Some(category.clone());
-            }
+        if let Some(category) = &item.category
+            && last_category.as_deref() != Some(category.as_str())
+        {
+            grouped.push(PaletteItem::group(category.clone()));
+            last_category = Some(category.clone());
         }
         grouped.push(item);
     }
@@ -1188,11 +1185,7 @@ fn item_text(item: &PaletteItem, cols: usize, is_selected: bool) -> Text {
             LineStyle::Success => text.success_color_range(range.start..range.end),
         };
     }
-    if is_selected {
-        text.selected()
-    } else {
-        text
-    }
+    if is_selected { text.selected() } else { text }
 }
 
 fn item_line(item: &PaletteItem, cols: usize) -> RenderedLine {
