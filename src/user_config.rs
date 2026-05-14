@@ -2,9 +2,12 @@ use crate::model::{
     CommandAction, PaletteAction, PaletteId, PaletteItem, PopupCoordinates, ThemeAction,
 };
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+const CONFIG_EXTS: &[&str] = &["toml", "yaml", "json"];
 
 #[derive(Clone, Debug, Default)]
 pub struct UserConfig {
@@ -39,7 +42,7 @@ struct RawPaletteItem {
     aliases: Option<Vec<String>>,
     shortcut: Option<String>,
     icon: Option<String>,
-    #[serde(rename = "iconColor")]
+    #[serde(rename = "iconColor", alias = "icon_color")]
     icon_color: Option<String>,
     action: ConfigAction,
 }
@@ -65,17 +68,17 @@ pub enum ConfigAction {
 struct RawCustomPalette {
     title: Option<String>,
     from: Option<Vec<String>>,
-    #[serde(rename = "fromCategory")]
+    #[serde(rename = "fromCategory", alias = "from_category")]
     from_category: Option<String>,
-    #[serde(rename = "fromGroup")]
+    #[serde(rename = "fromGroup", alias = "from_group")]
     from_group: Option<String>,
     command: Option<String>,
     action: Option<ConfigAction>,
     icon: Option<String>,
-    #[serde(rename = "iconColor")]
+    #[serde(rename = "iconColor", alias = "icon_color")]
     icon_color: Option<String>,
     grouped: Option<bool>,
-    #[serde(rename = "emptyText")]
+    #[serde(rename = "emptyText", alias = "empty_text")]
     empty_text: Option<String>,
     items: Option<Vec<RawPaletteItem>>,
 }
@@ -86,14 +89,11 @@ pub fn load_user_config(home: Option<&Path>) -> UserConfig {
     };
 
     let config_root = home.join(".config").join("zellij-palette");
-    let commands = load_commands(&config_root.join("commands.json"));
+    let commands = load_commands(&config_root);
     let custom_palettes = load_custom_palettes(&config_root.join("palettes"));
-    let shortcut_overrides = load_json_file(&config_root.join("shortcuts.json")).unwrap_or_default();
-    let alias_overrides = load_json_file(&config_root.join("aliases.json")).unwrap_or_default();
-    let hidden_titles = load_json_file::<Vec<String>>(&config_root.join("hidden.json"))
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
+    let shortcut_overrides = load_config_file(&config_root, "shortcuts").unwrap_or_default();
+    let alias_overrides = load_config_file(&config_root, "aliases").unwrap_or_default();
+    let hidden_titles = load_hidden(&config_root).into_iter().collect();
     let theme_names = load_theme_names(&home.join(".config").join("zellij").join("themes"));
 
     UserConfig {
@@ -106,55 +106,123 @@ pub fn load_user_config(home: Option<&Path>) -> UserConfig {
     }
 }
 
-fn load_commands(path: &Path) -> Vec<PaletteItem> {
-    let Some(parsed) = load_json_file::<Vec<RawPaletteItem>>(path) else {
-        return Vec::new();
-    };
-    parsed
-        .into_iter()
-        .map(raw_item_to_palette_item)
-        .collect()
+// `commands` is a top-level array in JSON/YAML, but TOML disallows root
+// arrays — for TOML we accept `[[commands]]` (array of tables wrapped under
+// a `commands` key).
+fn load_commands(config_root: &Path) -> Vec<PaletteItem> {
+    #[derive(Deserialize)]
+    struct TomlWrap {
+        commands: Option<Vec<RawPaletteItem>>,
+    }
+
+    for ext in CONFIG_EXTS {
+        let path = config_root.join(format!("commands.{ext}"));
+        let Ok(raw) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let parsed: Option<Vec<RawPaletteItem>> = match *ext {
+            "toml" => toml::from_str::<TomlWrap>(&raw).ok().and_then(|w| w.commands),
+            "yaml" => serde_yml::from_str(&raw).ok(),
+            "json" => serde_json::from_str(&raw).ok(),
+            _ => None,
+        };
+        return parsed
+            .unwrap_or_default()
+            .into_iter()
+            .map(raw_item_to_palette_item)
+            .collect();
+    }
+    Vec::new()
 }
 
-fn load_custom_palettes(path: &Path) -> HashMap<String, CustomPalette> {
-    let Ok(entries) = fs::read_dir(path) else {
+// Same TOML root-table constraint as `commands` — for TOML we accept
+// `hidden = ["..."]`.
+fn load_hidden(config_root: &Path) -> Vec<String> {
+    #[derive(Deserialize)]
+    struct TomlWrap {
+        hidden: Option<Vec<String>>,
+    }
+
+    for ext in CONFIG_EXTS {
+        let path = config_root.join(format!("hidden.{ext}"));
+        let Ok(raw) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let parsed: Option<Vec<String>> = match *ext {
+            "toml" => toml::from_str::<TomlWrap>(&raw).ok().and_then(|w| w.hidden),
+            "yaml" => serde_yml::from_str(&raw).ok(),
+            "json" => serde_json::from_str(&raw).ok(),
+            _ => None,
+        };
+        return parsed.unwrap_or_default();
+    }
+    Vec::new()
+}
+
+fn load_custom_palettes(dir: &Path) -> HashMap<String, CustomPalette> {
+    let Ok(entries) = fs::read_dir(dir) else {
         return HashMap::new();
     };
 
-    let mut palettes = HashMap::new();
+    // stem -> (priority index in CONFIG_EXTS, path, ext)
+    let mut best: HashMap<String, (usize, PathBuf, &'static str)> = HashMap::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
-        }
-        let Some(parsed) = load_json_file::<RawCustomPalette>(&path) else {
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
             continue;
         };
-        let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        let Some(prio) = CONFIG_EXTS.iter().position(|candidate| *candidate == ext) else {
             continue;
         };
-        palettes.insert(
-            name.to_owned(),
-            CustomPalette {
-                title: parsed.title,
-                from: parsed.from.unwrap_or_default(),
-                from_category: parsed.from_category.or(parsed.from_group),
-                command: parsed.command,
-                template_action: parsed.action,
-                default_icon: parsed.icon,
-                default_icon_color: parsed.icon_color,
-                grouped: parsed.grouped,
-                empty_text: parsed.empty_text,
-                items: parsed
-                    .items
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(raw_item_to_palette_item)
-                    .collect(),
-            },
-        );
+        let Some(stem) = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+
+        let ext_static = CONFIG_EXTS[prio];
+        best.entry(stem)
+            .and_modify(|cur| {
+                if prio < cur.0 {
+                    *cur = (prio, path.clone(), ext_static);
+                }
+            })
+            .or_insert((prio, path, ext_static));
+    }
+
+    let mut palettes = HashMap::new();
+    for (name, (_, path, ext)) in best {
+        let Ok(raw) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(parsed) = parse_by_ext::<RawCustomPalette>(ext, &raw) else {
+            continue;
+        };
+        palettes.insert(name, custom_palette_from_raw(parsed));
     }
     palettes
+}
+
+fn custom_palette_from_raw(parsed: RawCustomPalette) -> CustomPalette {
+    CustomPalette {
+        title: parsed.title,
+        from: parsed.from.unwrap_or_default(),
+        from_category: parsed.from_category.or(parsed.from_group),
+        command: parsed.command,
+        template_action: parsed.action,
+        default_icon: parsed.icon,
+        default_icon_color: parsed.icon_color,
+        grouped: parsed.grouped,
+        empty_text: parsed.empty_text,
+        items: parsed
+            .items
+            .unwrap_or_default()
+            .into_iter()
+            .map(raw_item_to_palette_item)
+            .collect(),
+    }
 }
 
 fn load_theme_names(path: &Path) -> Vec<String> {
@@ -389,11 +457,28 @@ pub fn referenced_items_from_custom_palette(
     items
 }
 
-fn load_json_file<T: for<'de> Deserialize<'de>>(path: &Path) -> Option<T> {
-    let Ok(raw) = fs::read_to_string(path) else {
-        return None;
-    };
-    serde_json::from_str(&raw).ok()
+fn parse_by_ext<T: DeserializeOwned>(ext: &str, raw: &str) -> Option<T> {
+    match ext {
+        "toml" => toml::from_str(raw).ok(),
+        "yaml" => serde_yml::from_str(raw).ok(),
+        "json" => serde_json::from_str(raw).ok(),
+        _ => None,
+    }
+}
+
+// Try each accepted extension in priority order (toml > yaml > json) and
+// return the first one whose file exists and parses. If a file exists but
+// fails to parse, we stop the chain — falling through to a lower-priority
+// stale file would silently substitute behind the user's back.
+fn load_config_file<T: DeserializeOwned>(dir: &Path, stem: &str) -> Option<T> {
+    for ext in CONFIG_EXTS {
+        let path = dir.join(format!("{stem}.{ext}"));
+        let Ok(raw) = fs::read_to_string(&path) else {
+            continue;
+        };
+        return parse_by_ext::<T>(ext, &raw);
+    }
+    None
 }
 
 #[cfg(test)]
@@ -469,6 +554,238 @@ mod tests {
         assert_eq!(tools.default_icon_color.as_deref(), Some("#ffaa00"));
         assert_eq!(tools.grouped, Some(true));
         assert_eq!(tools.empty_text.as_deref(), Some("No tools"));
+    }
+
+    #[test]
+    fn load_user_config_accepts_toml_overlay_files() {
+        let home = temp_home("load-user-config-toml");
+        let config_root = home.join(".config").join("zellij-palette");
+        fs::create_dir_all(config_root.join("palettes")).unwrap();
+
+        fs::write(
+            config_root.join("commands.toml"),
+            r##"
+[[commands]]
+title = "Open Logs"
+group = "Tools"
+shortcut = "Cmd-L"
+icon = "L"
+icon_color = "#22cc22"
+action = { popup = "tail -f logs.txt" }
+"##,
+        )
+        .unwrap();
+        fs::write(
+            config_root.join("shortcuts.toml"),
+            r#""Find Pane" = "Ctrl-P""#,
+        )
+        .unwrap();
+        fs::write(
+            config_root.join("aliases.toml"),
+            r#""Find Pane" = ["jump", "locator"]"#,
+        )
+        .unwrap();
+        fs::write(
+            config_root.join("hidden.toml"),
+            r#"hidden = ["Split Down"]"#,
+        )
+        .unwrap();
+        fs::write(
+            config_root.join("palettes").join("tools.toml"),
+            r##"
+title = "Tools"
+from_category = "Tools"
+icon = "T"
+icon_color = "#ffaa00"
+grouped = true
+empty_text = "No tools"
+action = { popup = "echo {}" }
+"##,
+        )
+        .unwrap();
+
+        let user_config = load_user_config(Some(&home));
+
+        assert_eq!(user_config.commands.len(), 1);
+        assert_eq!(user_config.commands[0].category.as_deref(), Some("Tools"));
+        assert_eq!(user_config.commands[0].shortcut.as_deref(), Some("Cmd-L"));
+        assert_eq!(user_config.commands[0].icon.as_deref(), Some("L"));
+        assert_eq!(
+            user_config.commands[0].icon_color.as_deref(),
+            Some("#22cc22")
+        );
+        assert_eq!(
+            user_config.shortcut_overrides.get("Find Pane").map(String::as_str),
+            Some("Ctrl-P")
+        );
+        assert_eq!(
+            user_config
+                .alias_overrides
+                .get("Find Pane")
+                .map(|aliases| aliases.as_slice()),
+            Some(["jump".to_owned(), "locator".to_owned()].as_slice())
+        );
+        assert!(user_config.hidden_titles.contains("Split Down"));
+
+        let tools = user_config.custom_palettes.get("tools").unwrap();
+        assert_eq!(tools.from_category.as_deref(), Some("Tools"));
+        assert_eq!(tools.default_icon.as_deref(), Some("T"));
+        assert_eq!(tools.default_icon_color.as_deref(), Some("#ffaa00"));
+        assert_eq!(tools.grouped, Some(true));
+        assert_eq!(tools.empty_text.as_deref(), Some("No tools"));
+    }
+
+    #[test]
+    fn load_user_config_prefers_toml_over_json_for_overlays() {
+        let home = temp_home("load-user-config-priority");
+        let config_root = home.join(".config").join("zellij-palette");
+        fs::create_dir_all(&config_root).unwrap();
+
+        fs::write(
+            config_root.join("shortcuts.toml"),
+            r#""Find Pane" = "Ctrl-T""#,
+        )
+        .unwrap();
+        fs::write(
+            config_root.join("shortcuts.json"),
+            r#"{"Find Pane":"Ctrl-J"}"#,
+        )
+        .unwrap();
+        fs::write(
+            config_root.join("shortcuts.yaml"),
+            r#""Find Pane": "Ctrl-Y""#,
+        )
+        .unwrap();
+
+        let user_config = load_user_config(Some(&home));
+
+        // TOML wins over both YAML and JSON.
+        assert_eq!(
+            user_config.shortcut_overrides.get("Find Pane").map(String::as_str),
+            Some("Ctrl-T")
+        );
+    }
+
+    #[test]
+    fn broken_higher_priority_file_does_not_fall_through_to_lower_priority() {
+        let home = temp_home("load-user-config-broken");
+        let config_root = home.join(".config").join("zellij-palette");
+        fs::create_dir_all(&config_root).unwrap();
+
+        // Syntactically invalid TOML.
+        fs::write(
+            config_root.join("shortcuts.toml"),
+            "this is = not = valid = toml",
+        )
+        .unwrap();
+        // A perfectly valid JSON file that should NOT be substituted.
+        fs::write(
+            config_root.join("shortcuts.json"),
+            r#"{"Find Pane":"Ctrl-J"}"#,
+        )
+        .unwrap();
+
+        let user_config = load_user_config(Some(&home));
+
+        assert!(user_config.shortcut_overrides.is_empty());
+    }
+
+    #[test]
+    fn load_custom_palettes_picks_highest_priority_per_stem() {
+        let home = temp_home("load-user-config-palettes-mix");
+        let palettes_dir = home.join(".config").join("zellij-palette").join("palettes");
+        fs::create_dir_all(&palettes_dir).unwrap();
+
+        // `tools` has both .toml and .json — TOML must win.
+        fs::write(
+            palettes_dir.join("tools.toml"),
+            r#"
+title = "Tools (TOML)"
+action = { popup = "echo {}" }
+"#,
+        )
+        .unwrap();
+        fs::write(
+            palettes_dir.join("tools.json"),
+            r#"{"title":"Tools (JSON)","action":{"popup":"echo {}"}}"#,
+        )
+        .unwrap();
+        // `panes` only as .yaml.
+        fs::write(
+            palettes_dir.join("panes.yaml"),
+            "title: Panes (YAML)\naction:\n  popup: echo {}\n",
+        )
+        .unwrap();
+        // `.yml` is intentionally unsupported and must be ignored.
+        fs::write(
+            palettes_dir.join("ignored.yml"),
+            "title: Ignored\naction:\n  popup: echo {}\n",
+        )
+        .unwrap();
+
+        let user_config = load_user_config(Some(&home));
+
+        assert_eq!(
+            user_config.custom_palettes.get("tools").and_then(|p| p.title.as_deref()),
+            Some("Tools (TOML)")
+        );
+        assert_eq!(
+            user_config.custom_palettes.get("panes").and_then(|p| p.title.as_deref()),
+            Some("Panes (YAML)")
+        );
+        assert!(!user_config.custom_palettes.contains_key("ignored"));
+    }
+
+    // Stage the bundled examples/ into a temp HOME and verify they load
+    // through the real loader. Guards against TOML/escape regressions in
+    // the user-facing samples.
+    #[test]
+    fn bundled_examples_toml_files_parse() {
+        let home = temp_home("load-user-config-examples");
+        let config_root = home.join(".config").join("zellij-palette");
+        fs::create_dir_all(config_root.join("palettes")).unwrap();
+
+        let project_examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples");
+        for name in ["commands", "shortcuts", "aliases", "hidden"] {
+            fs::copy(
+                project_examples.join(format!("{name}.toml")),
+                config_root.join(format!("{name}.toml")),
+            )
+            .unwrap();
+        }
+        fs::copy(
+            project_examples.join("palettes").join("github-prs.toml"),
+            config_root.join("palettes").join("github-prs.toml"),
+        )
+        .unwrap();
+
+        let user_config = load_user_config(Some(&home));
+
+        assert!(user_config.commands.iter().any(|item| item.title == "lazygit"));
+        assert!(user_config.commands.iter().any(|item| item.title == "Tail logs"));
+        assert_eq!(
+            user_config.shortcut_overrides.get("Find Pane").map(String::as_str),
+            Some("Ctrl-F")
+        );
+        assert_eq!(
+            user_config
+                .alias_overrides
+                .get("Tail logs")
+                .map(|aliases| aliases.as_slice()),
+            Some(["journal".to_owned()].as_slice())
+        );
+        assert!(user_config.hidden_titles.contains("Detach Session"));
+
+        let gh = user_config.custom_palettes.get("github-prs").unwrap();
+        assert_eq!(gh.title.as_deref(), Some("GitHub PRs"));
+        assert_eq!(gh.from_category.as_deref(), Some("Tools"));
+        // The jq escapes survive a TOML round-trip.
+        assert!(
+            gh.command
+                .as_deref()
+                .unwrap()
+                .contains(r##""#\(.number) \(.title)""##)
+        );
     }
 
     #[test]

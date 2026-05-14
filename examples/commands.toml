@@ -1,0 +1,17 @@
+[[commands]]
+title = "lazygit"
+description = "open lazygit in a floating command pane"
+category = "Tools"
+icon = "󰊢"
+aliases = ["git", "lg"]
+shortcut = "Ctrl-G"
+action = { popup = "lazygit", width = "80%", height = "80%", borderless = true }
+
+[[commands]]
+title = "Tail logs"
+description = "follow journalctl in a floating pane"
+category = "Tools"
+icon = "󰌱"
+icon_color = "#22cc22"
+aliases = ["logs"]
+action = { popup = "journalctl -f" }

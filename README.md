@@ -10,10 +10,11 @@ It opens as a Zellij plugin pane, lets you fuzzy-search actions, and dispatches 
 - `Find Pane` palette that jumps across sessions, tabs, and panes
 - `Move Pane` palette that sends the caller pane into another tab or a new tab
 - `Themes` palette for dark/light/toggle and user theme names from `~/.config/zellij/themes/*.kdl`
-- Custom commands from `~/.config/zellij-palette/commands.json`
-- Custom palettes from `~/.config/zellij-palette/palettes/*.json`
-- `hidden.json`, `shortcuts.json`, and `aliases.json` overlays
-- Category-aware custom palettes via `fromCategory`
+- Custom commands from `~/.config/zellij-palette/commands.toml`
+- Custom palettes from `~/.config/zellij-palette/palettes/*.toml`
+- `hidden.toml`, `shortcuts.toml`, and `aliases.toml` overlays
+- Files can be authored as TOML, YAML, or JSON; when several variants of the same name exist, TOML wins, then YAML, then JSON
+- Category-aware custom palettes via `from_category` (`fromCategory` still works)
 - Shell-backed palette sources that emit JSON items or plain lines with optional icon metadata
 - Focused launch bindings for a built-in palette, a custom palette, or a single category
 
@@ -95,36 +96,46 @@ Config lives under:
 ~/.config/zellij-palette/
 ```
 
+Each file can be authored as TOML, YAML, or JSON. The loader picks the
+extension by priority **TOML > YAML > JSON** and uses the first variant
+that exists. If a higher-priority file is present but fails to parse,
+the loader does *not* silently fall through to a lower-priority sibling.
+Examples below use TOML; the same data deserializes from YAML and JSON.
+
 ### Extra commands
 
 Path:
 
 ```text
-~/.config/zellij-palette/commands.json
+~/.config/zellij-palette/commands.toml
 ```
 
 Example:
+
+```toml
+[[commands]]
+title = "lazygit"
+description = "open lazygit in a floating command pane"
+category = "Tools"
+icon = "󰊢"
+aliases = ["git", "lg"]
+shortcut = "Ctrl-G"
+action = { popup = "lazygit", width = "80%", height = "80%", borderless = true }
+
+[[commands]]
+title = "Reload shell rc"
+group = "Tools"
+action = { shell = "exec $SHELL -lc 'source ~/.zshrc'" }
+```
+
+JSON equivalent (`commands.json`) — a top-level array of the same items:
 
 ```json
 [
   {
     "title": "lazygit",
-    "description": "open lazygit in a floating command pane",
     "category": "Tools",
-    "icon": "󰊢",
-    "aliases": ["git", "lg"],
-    "shortcut": "Ctrl-G",
-    "action": {
-      "popup": "lazygit",
-      "width": "80%",
-      "height": "80%",
-      "borderless": true
-    }
-  },
-  {
-    "title": "Reload shell rc",
-    "group": "Tools",
-    "action": { "shell": "exec $SHELL -lc 'source ~/.zshrc'" }
+    "action": { "popup": "lazygit", "width": "80%", "height": "80%", "borderless": true }
   }
 ]
 ```
@@ -137,7 +148,7 @@ Supported item fields:
 - `aliases`
 - `shortcut`
 - `icon`
-- `iconColor`
+- `icon_color` (alias: `iconColor`)
 - popup action sizing keys: `x`, `y`, `width`, `height`, `pinned`, `borderless`
 - `action`
 
@@ -148,10 +159,16 @@ Supported item fields:
 Path:
 
 ```text
-~/.config/zellij-palette/hidden.json
+~/.config/zellij-palette/hidden.toml
 ```
 
 Example:
+
+```toml
+hidden = ["Previous Tab", "Detach Session"]
+```
+
+JSON equivalent — a top-level array:
 
 ```json
 ["Previous Tab", "Detach Session"]
@@ -162,16 +179,14 @@ Example:
 Path:
 
 ```text
-~/.config/zellij-palette/shortcuts.json
+~/.config/zellij-palette/shortcuts.toml
 ```
 
 Example:
 
-```json
-{
-  "Find Pane": "Ctrl-F",
-  "lazygit": "Ctrl-G"
-}
+```toml
+"Find Pane" = "Ctrl-F"
+"lazygit" = "Ctrl-G"
 ```
 
 ### Visible alias chips
@@ -179,16 +194,14 @@ Example:
 Path:
 
 ```text
-~/.config/zellij-palette/aliases.json
+~/.config/zellij-palette/aliases.toml
 ```
 
 Example:
 
-```json
-{
-  "Find Pane": ["locator"],
-  "Switch Theme...": ["appearance"]
-}
+```toml
+"Find Pane" = ["locator"]
+"Switch Theme..." = ["appearance"]
 ```
 
 ### Custom palettes
@@ -196,63 +209,64 @@ Example:
 Path:
 
 ```text
-~/.config/zellij-palette/palettes/<name>.json
+~/.config/zellij-palette/palettes/<name>.toml
 ```
 
 Example:
 
-```json
-{
-  "title": "GitHub PRs",
-  "fromCategory": "Tools",
-  "icon": "󰘬",
-  "iconColor": "#58a6ff",
-  "command": "gh pr list --limit 20 --json number,title --jq '.[] | \"#\\(.number) \\(.title)\"'",
-  "action": { "popup": "open {}" }
-}
+```toml
+title = "GitHub PRs"
+from_category = "Tools"
+icon = "󰘬"
+icon_color = "#58a6ff"
+command = "gh pr list --limit 20 --json number,title --jq '.[] | \"#\\(.number) \\(.title)\"'"
+action = { popup = "open {}" }
 ```
 
-Supported item actions:
+Supported item actions (shown as TOML inline tables; in JSON wrap the
+same keys in `{...}` objects):
 
-- `{ "palette": "themes" }`
-- `{ "palette": "find-pane" }`
-- `{ "palette": "<custom-name>" }`
-- `{ "shell": "..." }`
-- `{ "popup": "..." }`
-- `{ "popup": "...", "x": "10%", "y": "10%", "width": "80%", "height": "80%", "pinned": true, "borderless": true }`
-- `{ "theme": "dark" }`
-- `{ "theme": "light" }`
-- `{ "theme": "toggle" }`
-- `{ "theme": "<theme-name>" }`
+- `{ palette = "themes" }`
+- `{ palette = "find-pane" }`
+- `{ palette = "<custom-name>" }`
+- `{ shell = "..." }`
+- `{ popup = "..." }`
+- `{ popup = "...", x = "10%", y = "10%", width = "80%", height = "80%", pinned = true, borderless = true }`
+- `{ theme = "dark" }`
+- `{ theme = "light" }`
+- `{ theme = "toggle" }`
+- `{ theme = "<theme-name>" }`
 
 For shell-backed palette sources:
 
-- If the command prints a JSON array, each entry should match the same item schema as `commands.json`
+- If the command prints a JSON array, each entry should match the same item schema as `commands.toml`
 - If the command prints plain lines, pair it with an `action` template and use `{}` as the selected line placeholder
 - Plain-line mode also accepts tab-separated icon fields:
   - `<title>`
   - `<icon>\t<title>`
-  - `<icon>\t<iconColor>\t<title>`
+  - `<icon>\t<icon_color>\t<title>`
 
-Custom palette keys:
+Custom palette keys (snake_case shown; camelCase variants
+`fromCategory`, `fromGroup`, `iconColor`, `emptyText` are accepted for
+backward compatibility):
 
 - `title`
 - `from`
-- `fromCategory`
-- `fromGroup`
+- `from_category`
+- `from_group`
 - `command`
 - `action`
 - `icon`
-- `iconColor`
+- `icon_color`
 - `grouped`
-- `emptyText`
+- `empty_text`
 - `items`
 
 ## Smoke test
 
 1. Build the plugin.
 2. Copy [examples/config.kdl](examples/config.kdl) and replace `__WASM__` with the absolute wasm path.
-3. Copy any wanted example JSON files from [examples/](examples/) into `~/.config/zellij-palette/`.
+3. Copy any wanted example TOML files from [examples/](examples/) into `~/.config/zellij-palette/`.
 4. Start Zellij with that config.
 5. Press `Ctrl-p`, `Alt-t`, and `Alt-o`.
 
