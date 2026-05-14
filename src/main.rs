@@ -180,7 +180,9 @@ impl ZellijPlugin for State {
             Event::Key(key) => self.handle_key(key),
             Event::Mouse(mouse) => self.handle_mouse(mouse),
             Event::Visible(true) => {
-                if self.permission_state == PermissionState::Granted {
+                if self.permission_state == PermissionState::Granted
+                    && self.active_palette_needs_sessions()
+                {
                     self.refresh_sessions();
                 }
                 true
@@ -202,7 +204,9 @@ impl ZellijPlugin for State {
 impl State {
     fn finish_startup_after_permissions(&mut self) {
         self.load_user_config_from_home();
-        self.refresh_sessions();
+        if self.active_palette_needs_sessions() {
+            self.refresh_sessions();
+        }
         if let Some(ActivePalette::Custom(name)) = self.active_palette.clone() {
             self.maybe_request_custom_palette_data(&name);
         }
@@ -211,18 +215,27 @@ impl State {
         }
     }
 
+    // `get_session_list()` panics if the host has not finished wiring up the
+    // freshly-spawned plugin instance — see comment above `quiet_host_call`.
+    // `wasm32-wasip1` is panic=abort so we cannot catch it; the only viable
+    // mitigation is to skip the call when the active palette would not use
+    // the data anyway (custom palettes, theme palette, …).
+    fn active_palette_needs_sessions(&self) -> bool {
+        matches!(
+            self.active_palette,
+            Some(ActivePalette::BuiltIn(
+                PaletteId::FindPane | PaletteId::Sessions | PaletteId::MovePane
+            ))
+        )
+    }
+
     fn load_user_config_from_home(&mut self) {
         if self.home_dir.is_none() {
             self.home_dir = std::env::var_os("HOME").map(PathBuf::from).or_else(|| {
-                // Same race as `get_session_list`: the env-var host call panics
-                // if the host hasn't written a response yet. Catch it so an
-                // unlucky cold-start doesn't trap the whole plugin.
-                let env_vars = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                    get_session_environment_variables,
-                ))
-                .ok()
-                .unwrap_or_default();
-                env_vars.get("HOME").map(PathBuf::from)
+                quiet_host_call(get_session_environment_variables)
+                    .unwrap_or_default()
+                    .get("HOME")
+                    .map(PathBuf::from)
             });
         }
         let theme_dir = self
@@ -233,14 +246,7 @@ impl State {
     }
 
     fn refresh_sessions(&mut self) {
-        // zellij-tile 0.44.3's `get_session_list` shim does
-        // `bytes_from_stdin().unwrap()` (shim.rs:1959), which panics when the
-        // host is mid-transition (e.g. right after `switch_session_with_focus`
-        // spawns a fresh plugin instance in the target session). Guard the
-        // call with `catch_unwind` so a transient race trips a single skipped
-        // refresh instead of bringing down the whole plugin.
-        let snapshot = std::panic::catch_unwind(std::panic::AssertUnwindSafe(get_session_list));
-        if let Ok(Ok(snapshot)) = snapshot {
+        if let Some(Ok(snapshot)) = quiet_host_call(get_session_list) {
             self.sessions = snapshot.live_sessions;
         }
     }
@@ -322,6 +328,11 @@ impl State {
             self.active_palette = Some(previous.active_palette);
             self.query = previous.query;
             self.selected = previous.selected;
+            if self.permission_state == PermissionState::Granted
+                && self.active_palette_needs_sessions()
+            {
+                self.refresh_sessions();
+            }
             return;
         }
         close_self();
@@ -509,6 +520,16 @@ impl State {
         self.active_palette = Some(active_palette.clone());
         self.query.clear();
         self.selected = 0;
+        // The cold-start refresh was gated on the *initial* palette needing
+        // sessions, so navigating from e.g. Commands -> Find Pane would land
+        // with an empty session list. Refresh here too — at navigation time
+        // the user has already interacted with the plugin, so the host is
+        // settled and the call won't race.
+        if self.permission_state == PermissionState::Granted
+            && self.active_palette_needs_sessions()
+        {
+            self.refresh_sessions();
+        }
         if let ActivePalette::Custom(name) = active_palette {
             self.maybe_request_custom_palette_data(&name);
         }
@@ -1152,6 +1173,30 @@ fn floating_coordinates(
         coordinates.pinned,
         coordinates.borderless,
     )
+}
+
+// zellij-tile 0.44.3's stdin-reading host shims (`get_session_list`,
+// `get_session_environment_variables`, …) do `bytes_from_stdin().unwrap()`,
+// which panics whenever the host has not written a response yet. This races
+// during plugin cold-start in a freshly switched-to session: the new instance
+// gets `PermissionRequestResult(Granted)` before Zellij's session monitor is
+// ready to answer queries.
+//
+// The real fix is to skip these calls when the active palette would not use
+// the data — see `active_palette_needs_sessions`. For the residual cases
+// (find-pane / sessions / move-pane palettes themselves), this helper at least
+// silences the verbose `PanicHookInfo` dump that zellij-tile's default hook
+// (`register_plugin!` -> `report_panic`) pushes into the plugin pane.
+//
+// Note: `wasm32-wasip1` is `panic=abort`, so `catch_unwind` does NOT actually
+// catch — the wasm module still traps with `unreachable`. Silencing the hook
+// only trims the cosmetic message; it does not keep the plugin alive.
+fn quiet_host_call<R>(f: impl FnOnce() -> R + std::panic::UnwindSafe) -> Option<R> {
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(f);
+    std::panic::set_hook(prev_hook);
+    result.ok()
 }
 
 fn active_palette_from_config(palette: Option<&str>) -> ActivePalette {
