@@ -1106,11 +1106,12 @@ fn group_items_by_category(items: Vec<PaletteItem>) -> Vec<PaletteItem> {
             grouped.push(item);
             continue;
         }
-        if let Some(category) = &item.category {
-            if last_category.as_deref() != Some(category.as_str()) {
+        match &item.category {
+            Some(category) if last_category.as_deref() != Some(category.as_str()) => {
                 grouped.push(PaletteItem::group(category.clone()));
                 last_category = Some(category.clone());
             }
+            _ => {}
         }
         grouped.push(item);
     }
