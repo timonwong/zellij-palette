@@ -1,4 +1,3 @@
-pub mod focus;
 pub mod fuzzy;
 pub mod kdl;
 pub mod model;
@@ -8,9 +7,8 @@ pub mod user_config;
 
 #[cfg(test)]
 mod tests {
-    use crate::focus::{FocusPanePlan, plan_focus_pane, should_list_find_pane_item};
     use crate::fuzzy::filter_items;
-    use crate::model::{PaletteAction, PaletteItem, PaneTarget};
+    use crate::model::{PaletteAction, PaletteItem};
 
     fn item(title: &str) -> PaletteItem {
         PaletteItem::leaf(title, PaletteAction::Noop)
@@ -65,60 +63,5 @@ mod tests {
         let filtered = filter_items(&items, "");
         let titles: Vec<_> = filtered.iter().map(|item| item.title.as_str()).collect();
         assert_eq!(titles, vec!["Themes", "Find Pane", "Split Right"]);
-    }
-
-    #[test]
-    fn focus_plan_uses_direct_focus_for_current_session() {
-        let target = PaneTarget {
-            session_name: "work".to_owned(),
-            tab_position: 2,
-            tab_id: 17,
-            pane_id: 42,
-            is_plugin: false,
-        };
-
-        let plan = plan_focus_pane(Some("work"), &target);
-
-        assert_eq!(
-            plan,
-            FocusPanePlan::CurrentSession {
-                pane_id: 42,
-                is_plugin: false,
-            }
-        );
-    }
-
-    #[test]
-    fn focus_plan_switches_session_for_other_session_targets() {
-        let target = PaneTarget {
-            session_name: "ops".to_owned(),
-            tab_position: 3,
-            tab_id: 21,
-            pane_id: 9,
-            is_plugin: true,
-        };
-
-        let plan = plan_focus_pane(Some("work"), &target);
-
-        assert_eq!(
-            plan,
-            FocusPanePlan::OtherSession {
-                session_name: "ops".to_owned(),
-                tab_position: 3,
-                pane_id: 9,
-                is_plugin: true,
-            }
-        );
-    }
-
-    #[test]
-    fn find_pane_items_exclude_the_palette_plugin_itself() {
-        assert!(!should_list_find_pane_item(7, true, true, false, Some(7)));
-    }
-
-    #[test]
-    fn find_pane_items_keep_other_selectable_panes() {
-        assert!(should_list_find_pane_item(8, true, true, false, Some(7)));
-        assert!(should_list_find_pane_item(7, false, true, false, Some(7)));
     }
 }
