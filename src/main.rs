@@ -1304,10 +1304,8 @@ fn item_line(item: &PaletteItem, cols: usize) -> RenderedLine {
         segments.push(("  ".to_owned(), None));
     }
     segments.push((item.title.clone(), None));
-    if item.tree_prefix.is_none() {
-        if let Some(alias) = item.aliases.first() {
-            segments.push((format!("  [{alias}]"), Some(LineStyle::Alias)));
-        }
+    if let Some(alias) = item.aliases.first().filter(|_| item.tree_prefix.is_none()) {
+        segments.push((format!("  [{alias}]"), Some(LineStyle::Alias)));
     }
     if let Some(description) = &item.description {
         segments.push((format!("  {description}"), Some(LineStyle::Muted)));
