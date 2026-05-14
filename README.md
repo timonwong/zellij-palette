@@ -6,6 +6,8 @@ fuzzy-match flow, category overlays, custom-palette config layout, and
 shell-backed palette sources are all his design — this project is a port of
 those ideas onto Zellij's plugin model.
 
+![demo](assets/demo.png)
+
 > **Heads up — this is mostly "AI slop."**
 > The implementation is overwhelmingly AI-generated ("vibe-coded"). It works
 > for the author's daily Zellij use, but expect rough edges, inconsistent
@@ -66,9 +68,9 @@ The Rust toolchain, `wasm32-wasip1` target, `rustfmt`, and `clippy`
 are all declared in `mise.toml`, so `mise install` prepares the full
 repo toolchain.
 
-If you already had Rust 1.86 installed before this file existed, run
+If your local Rust install still points at an older repo toolchain, run
 `mise install -f rust` once so `mise` can reconcile the target and
-components onto the existing toolchain.
+components onto the updated toolchain.
 
 ## Bind It In Zellij
 
