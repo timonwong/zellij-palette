@@ -50,8 +50,12 @@ struct RawPaletteItem {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub enum ConfigAction {
-    Palette { palette: String },
-    Shell { shell: String },
+    Palette {
+        palette: String,
+    },
+    Shell {
+        shell: String,
+    },
     Popup {
         popup: String,
         x: Option<String>,
@@ -61,7 +65,9 @@ pub enum ConfigAction {
         pinned: Option<bool>,
         borderless: Option<bool>,
     },
-    Theme { theme: String },
+    Theme {
+        theme: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,7 +134,9 @@ fn load_commands(config_root: &Path) -> Vec<PaletteItem> {
             continue;
         };
         let parsed: Option<Vec<RawPaletteItem>> = match *ext {
-            "toml" => toml::from_str::<TomlWrap>(&raw).ok().and_then(|w| w.commands),
+            "toml" => toml::from_str::<TomlWrap>(&raw)
+                .ok()
+                .and_then(|w| w.commands),
             "yaml" => serde_yml::from_str(&raw).ok(),
             "json" => serde_json::from_str(&raw).ok(),
             _ => None,
@@ -318,7 +326,11 @@ fn plain_line_to_palette_item(
             default_icon_color.map(str::to_owned),
             (*title).to_owned(),
         ),
-        [icon, title] => (Some((*icon).to_owned()), default_icon_color.map(str::to_owned), (*title).to_owned()),
+        [icon, title] => (
+            Some((*icon).to_owned()),
+            default_icon_color.map(str::to_owned),
+            (*title).to_owned(),
+        ),
         [icon, icon_color, rest @ ..] => (
             Some((*icon).to_owned()),
             Some((*icon_color).to_owned()),
@@ -436,7 +448,10 @@ pub fn apply_item_overrides(
         .collect()
 }
 
-pub fn filter_hidden_items(items: Vec<PaletteItem>, hidden_titles: &HashSet<String>) -> Vec<PaletteItem> {
+pub fn filter_hidden_items(
+    items: Vec<PaletteItem>,
+    hidden_titles: &HashSet<String>,
+) -> Vec<PaletteItem> {
     items
         .into_iter()
         .filter(|item| !hidden_titles.contains(&item.title))
@@ -491,8 +506,8 @@ fn load_config_file<T: DeserializeOwned>(dir: &Path, stem: &str) -> Option<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConfigAction, CustomPalette, apply_item_overrides, filter_hidden_items,
-        load_user_config, parse_command_palette_output, referenced_items_from_custom_palette,
+        ConfigAction, CustomPalette, apply_item_overrides, filter_hidden_items, load_user_config,
+        parse_command_palette_output, referenced_items_from_custom_palette,
     };
     use crate::model::{PaletteAction, PaletteItem};
     use std::collections::{HashMap, HashSet};
@@ -537,9 +552,15 @@ mod tests {
         assert_eq!(user_config.commands[0].category.as_deref(), Some("Tools"));
         assert_eq!(user_config.commands[0].shortcut.as_deref(), Some("Cmd-L"));
         assert_eq!(user_config.commands[0].icon.as_deref(), Some("󰌱"));
-        assert_eq!(user_config.commands[0].icon_color.as_deref(), Some("#22cc22"));
         assert_eq!(
-            user_config.shortcut_overrides.get("Find Pane").map(String::as_str),
+            user_config.commands[0].icon_color.as_deref(),
+            Some("#22cc22")
+        );
+        assert_eq!(
+            user_config
+                .shortcut_overrides
+                .get("Find Pane")
+                .map(String::as_str),
             Some("Ctrl-P")
         );
         assert_eq!(
@@ -578,7 +599,10 @@ mod tests {
         );
 
         let with_dir = load_user_config(Some(&home), Some(&legacy_theme_dir));
-        assert_eq!(with_dir.theme_names, vec!["dracula".to_owned(), "nord".to_owned()]);
+        assert_eq!(
+            with_dir.theme_names,
+            vec!["dracula".to_owned(), "nord".to_owned()]
+        );
     }
 
     #[test]
@@ -640,7 +664,10 @@ action = { popup = "echo {}" }
             Some("#22cc22")
         );
         assert_eq!(
-            user_config.shortcut_overrides.get("Find Pane").map(String::as_str),
+            user_config
+                .shortcut_overrides
+                .get("Find Pane")
+                .map(String::as_str),
             Some("Ctrl-P")
         );
         assert_eq!(
@@ -686,7 +713,10 @@ action = { popup = "echo {}" }
 
         // TOML wins over both YAML and JSON.
         assert_eq!(
-            user_config.shortcut_overrides.get("Find Pane").map(String::as_str),
+            user_config
+                .shortcut_overrides
+                .get("Find Pane")
+                .map(String::as_str),
             Some("Ctrl-T")
         );
     }
@@ -751,11 +781,17 @@ action = { popup = "echo {}" }
         let user_config = load_user_config(Some(&home), None);
 
         assert_eq!(
-            user_config.custom_palettes.get("tools").and_then(|p| p.title.as_deref()),
+            user_config
+                .custom_palettes
+                .get("tools")
+                .and_then(|p| p.title.as_deref()),
             Some("Tools (TOML)")
         );
         assert_eq!(
-            user_config.custom_palettes.get("panes").and_then(|p| p.title.as_deref()),
+            user_config
+                .custom_palettes
+                .get("panes")
+                .and_then(|p| p.title.as_deref()),
             Some("Panes (YAML)")
         );
         assert!(!user_config.custom_palettes.contains_key("ignored"));
@@ -786,10 +822,23 @@ action = { popup = "echo {}" }
 
         let user_config = load_user_config(Some(&home), None);
 
-        assert!(user_config.commands.iter().any(|item| item.title == "lazygit"));
-        assert!(user_config.commands.iter().any(|item| item.title == "Tail logs"));
+        assert!(
+            user_config
+                .commands
+                .iter()
+                .any(|item| item.title == "lazygit")
+        );
+        assert!(
+            user_config
+                .commands
+                .iter()
+                .any(|item| item.title == "Tail logs")
+        );
         assert_eq!(
-            user_config.shortcut_overrides.get("Find Pane").map(String::as_str),
+            user_config
+                .shortcut_overrides
+                .get("Find Pane")
+                .map(String::as_str),
             Some("Ctrl-F")
         );
         assert_eq!(

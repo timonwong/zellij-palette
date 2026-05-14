@@ -31,10 +31,7 @@ mod tests {
     fn quotes_and_backslashes_are_escaped() {
         assert_eq!(escape_kdl_string(r#"weird"name"#), r#"weird\"name"#);
         assert_eq!(escape_kdl_string(r"with\backslash"), r"with\\backslash");
-        assert_eq!(
-            escape_kdl_string(r#"both"and\here"#),
-            r#"both\"and\\here"#,
-        );
+        assert_eq!(escape_kdl_string(r#"both"and\here"#), r#"both\"and\\here"#,);
     }
 
     #[test]
