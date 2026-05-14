@@ -1,8 +1,22 @@
 # zellij-palette
 
-A Rust/WASM command palette for Zellij, modeled after [`tmux-palette`](https://github.com/eduwass/tmux-palette).
+A Rust/WASM command palette for [Zellij][zellij], heavily inspired by
+[`tmux-palette`][tmux-palette] by [@eduwass][eduwass]. The `:` palette shape,
+fuzzy-match flow, category overlays, custom-palette config layout, and
+shell-backed palette sources are all his design — this project is a port of
+those ideas onto Zellij's plugin model.
+
+> **Heads up — this is mostly "AI slop."**
+> The implementation is overwhelmingly AI-generated ("vibe-coded"). It works
+> for the author's daily Zellij use, but expect rough edges, inconsistent
+> design choices, and the occasional WTF. Bug reports welcome; promises of
+> polish are not.
 
 It opens as a Zellij plugin pane, lets you fuzzy-search actions, and dispatches pane/tab/session/theme commands without leaving the keyboard.
+
+[zellij]: https://zellij.dev
+[tmux-palette]: https://github.com/eduwass/tmux-palette
+[eduwass]: https://github.com/eduwass
 
 ## Current feature set
 
@@ -18,7 +32,15 @@ It opens as a Zellij plugin pane, lets you fuzzy-search actions, and dispatches 
 - Shell-backed palette sources that emit JSON items or plain lines with optional icon metadata
 - Focused launch bindings for a built-in palette, a custom palette, or a single category
 
-## Build
+## Install
+
+The example below loads the plugin directly from the GitHub release
+artifact — no manual download needed. Browse all versions at
+<https://github.com/timonwong/zellij-palette/releases>.
+
+### Build from source
+
+If you'd rather build locally:
 
 ```bash
 mise install
@@ -56,24 +78,38 @@ Example snippet:
 
 ```kdl
 plugins {
-    zellij-palette location="file:/ABS/PATH/TO/zellij-palette/target/wasm32-wasip1/release/zellij-palette.wasm"
-    zellij-palette-themes location="file:/ABS/PATH/TO/zellij-palette/target/wasm32-wasip1/release/zellij-palette.wasm" {
+    // Zellij downloads remote plugins on first use and caches them by
+    // URL hash under $ZELLIJ_CACHE_DIR (defaults to ~/.cache/zellij/).
+    // `latest` is fetched ONCE and reused thereafter — Zellij does not
+    // re-resolve the redirect on upgrade. To pull a new release: pin
+    // to a versioned URL (.../releases/download/v0.1.0/zellij-palette.wasm)
+    // or clear the matching entry under $ZELLIJ_CACHE_DIR.
+    zellij-palette location="https://github.com/timonwong/zellij-palette/releases/latest/download/zellij-palette.wasm"
+    zellij-palette-themes location="https://github.com/timonwong/zellij-palette/releases/latest/download/zellij-palette.wasm" {
         palette "themes"
         theme_dir "~/.config/zellij/themes"
     }
-    zellij-palette-tools location="file:/ABS/PATH/TO/zellij-palette/target/wasm32-wasip1/release/zellij-palette.wasm" {
+    zellij-palette-tools location="https://github.com/timonwong/zellij-palette/releases/latest/download/zellij-palette.wasm" {
         category "Tools"
     }
 }
 
 keybinds {
-    normal {
-        bind "Ctrl p" {
+    // `shared` fires in EVERY input mode (Normal, Pane, Tab, Resize,
+    // Move, Scroll, Search, Locked, ...). Right for a global launcher
+    // you want reachable from anywhere — including Locked.
+    shared {
+        bind "Ctrl Shift p" {
             LaunchOrFocusPlugin "zellij-palette" {
                 floating true
                 move_to_focused_tab true
             }
         }
+    }
+
+    // `normal` only fires in Normal mode (Zellij's default prompt).
+    // Use it when a key would clash with submodes.
+    normal {
         bind "Alt t" {
             LaunchOrFocusPlugin "zellij-palette-themes" {
                 floating true
@@ -292,10 +328,13 @@ backward compatibility):
 
 ## Smoke test
 
-1. Build the plugin.
-2. Copy [examples/config.kdl](examples/config.kdl) and replace `__WASM__` with either the absolute build path above or `~/.config/zellij/plugins/zellij-palette.wasm` after `mise run install`.
-3. Copy any wanted example TOML files from [examples/](examples/) into `~/.config/zellij-palette/`.
-4. Start Zellij with that config.
-5. Press `Ctrl-p`, `Alt-t`, and `Alt-o`.
+1. Copy [examples/config.kdl](examples/config.kdl) into place — it loads
+   the plugin straight from the GitHub release, so no edits are needed.
+2. Copy any wanted example TOML files from [examples/](examples/) into `~/.config/zellij-palette/`.
+3. Start Zellij with that config.
+4. Press `Ctrl-Shift-p`, `Alt-t`, and `Alt-o`.
 
-There is also a pane-layout based loader in [examples/smoke-layout.kdl](examples/smoke-layout.kdl).
+To smoke-test a local build instead of the release artifact, use
+[examples/smoke-layout.kdl](examples/smoke-layout.kdl) — it still expects
+`__WASM__` to be substituted with the absolute path of your built
+`target/wasm32-wasip1/release/zellij-palette.wasm`.

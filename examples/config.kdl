@@ -1,22 +1,36 @@
 plugins {
-    zellij-palette location="file:__WASM__"
-    zellij-palette-themes location="file:__WASM__" {
+    // Zellij downloads remote plugins on first use and caches them by
+    // URL hash under $ZELLIJ_CACHE_DIR (defaults to ~/.cache/zellij/).
+    // `latest` is fetched ONCE and reused thereafter — Zellij does not
+    // re-resolve the redirect on upgrade. To pull a new release: pin
+    // to a versioned URL (.../releases/download/v0.1.0/zellij-palette.wasm)
+    // or clear the matching entry under $ZELLIJ_CACHE_DIR.
+    zellij-palette location="https://github.com/timonwong/zellij-palette/releases/latest/download/zellij-palette.wasm"
+    zellij-palette-themes location="https://github.com/timonwong/zellij-palette/releases/latest/download/zellij-palette.wasm" {
         palette "themes"
         theme_dir "~/.config/zellij/themes"
     }
-    zellij-palette-tools location="file:__WASM__" {
+    zellij-palette-tools location="https://github.com/timonwong/zellij-palette/releases/latest/download/zellij-palette.wasm" {
         category "Tools"
     }
 }
 
 keybinds {
-    normal {
-        bind "Ctrl p" {
+    // `shared` fires in EVERY input mode (Normal, Pane, Tab, Resize,
+    // Move, Scroll, Search, Locked, ...). Right for a global launcher
+    // you want reachable from anywhere — including Locked.
+    shared {
+        bind "Ctrl Shift p" {
             LaunchOrFocusPlugin "zellij-palette" {
                 floating true
                 move_to_focused_tab true
             }
         }
+    }
+
+    // `normal` only fires in Normal mode (Zellij's default prompt).
+    // Use it when a key would clash with submodes.
+    normal {
         bind "Alt t" {
             LaunchOrFocusPlugin "zellij-palette-themes" {
                 floating true

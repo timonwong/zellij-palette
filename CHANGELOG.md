@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- README now credits `tmux-palette` (by @eduwass) up front as the design
+  source, and carries an explicit "AI slop" disclaimer so readers know
+  the codebase is mostly AI-generated.
 - The Themes palette now lists all 41 themes Zellij 0.44 ships built-in
   (`ansi`, `ao`, `atelier`, `ayu-*`, `catppuccin-*`, `dracula`, `gruvbox-*`,
   `nord`, `tokyo-night-*`, etc.) on top of any user theme files the
@@ -45,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shorter or taller than 20 rows could activate the wrong row.
 
 ### Changed
+- README and `examples/config.kdl` now load the plugin straight from
+  `https://github.com/timonwong/zellij-palette/releases/latest/download/zellij-palette.wasm`
+  instead of a hand-edited local path. Zellij caches remote plugins by
+  URL hash under `$ZELLIJ_CACHE_DIR`, so `latest` is fetched once and
+  reused; pin to a versioned URL (`/releases/download/vX.Y.Z/...`) or
+  clear the matching cache entry to upgrade.
+- Example launcher keybinding switched from `Ctrl p` (normal mode only —
+  also collides with Zellij's default Pane-mode prefix) to `Ctrl Shift p`
+  under the `shared` scope, so the palette opens from any input mode.
+  `Alt t` (themes) and `Alt o` (tools) stay in `normal`.
 - User theme discovery is now opt-in via the `theme_dir` plugin
   parameter. The previous implicit scan of `~/.config/zellij/themes/`
   has been removed because we cannot reliably reproduce Zellij's full
