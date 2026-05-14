@@ -1,5 +1,6 @@
 pub mod fuzzy;
 pub mod model;
+pub mod selection;
 pub mod state;
 pub mod user_config;
 

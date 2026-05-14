@@ -6,6 +6,7 @@ use zellij_palette::fuzzy::filter_items;
 use zellij_palette::model::{
     CommandAction, PaletteAction, PaletteId, PaletteItem, PaneTarget, ThemeAction,
 };
+use zellij_palette::selection::{list_offset, next_selectable, normalize_selection};
 use zellij_palette::state::{PermissionState, permission_placeholder_items};
 use zellij_palette::user_config::{
     UserConfig, apply_item_overrides, filter_hidden_items, load_user_config,
@@ -249,21 +250,7 @@ impl State {
 
     fn move_selection(&mut self, delta: isize) {
         let visible = self.visible_items();
-        let selectable: Vec<usize> = visible
-            .iter()
-            .enumerate()
-            .filter_map(|(index, item)| item.selectable.then_some(index))
-            .collect();
-        if selectable.is_empty() {
-            self.selected = 0;
-            return;
-        }
-        let current_index = selectable
-            .iter()
-            .position(|index| *index == self.selected)
-            .unwrap_or(0) as isize;
-        let next_index = (current_index + delta).rem_euclid(selectable.len() as isize) as usize;
-        self.selected = selectable[next_index];
+        self.selected = next_selectable(&visible, self.selected, delta);
     }
 
     fn select_line(&mut self, line: isize) {
@@ -272,7 +259,7 @@ impl State {
             return;
         }
         let max_rows = self.list_rows(self.last_rows);
-        let start = self.list_offset(visible.len(), max_rows);
+        let start = list_offset(self.selected, visible.len(), max_rows);
         let relative_line = line as usize - LIST_START_ROW;
         let index = start + relative_line;
         if index < visible.len() && visible[index].selectable {
@@ -521,7 +508,7 @@ impl State {
 
         self.ensure_selection();
         let list_rows = self.list_rows(rows);
-        let offset = self.list_offset(visible.len(), list_rows);
+        let offset = list_offset(self.selected, visible.len(), list_rows);
         let end = (offset + list_rows).min(visible.len());
         for (line, item) in visible[offset..end].iter().enumerate() {
             let row = LIST_START_ROW + line;
@@ -924,34 +911,11 @@ impl State {
 
     fn ensure_selection(&mut self) {
         let visible = self.visible_items();
-        if visible.is_empty() {
-            self.selected = 0;
-            return;
-        }
-        if visible
-            .get(self.selected)
-            .is_some_and(|item| item.selectable)
-        {
-            return;
-        }
-        if let Some(index) = visible.iter().position(|item| item.selectable) {
-            self.selected = index;
-        } else {
-            self.selected = 0;
-        }
+        self.selected = normalize_selection(&visible, self.selected);
     }
 
     fn list_rows(&self, rows: usize) -> usize {
         rows.saturating_sub(LIST_START_ROW + FOOTER_ROWS).max(1)
-    }
-
-    fn list_offset(&self, item_count: usize, list_rows: usize) -> usize {
-        if item_count <= list_rows || self.selected < list_rows / 2 {
-            0
-        } else {
-            let max_offset = item_count.saturating_sub(list_rows);
-            self.selected.saturating_sub(list_rows / 2).min(max_offset)
-        }
     }
 
     fn palette_title(&self) -> String {
