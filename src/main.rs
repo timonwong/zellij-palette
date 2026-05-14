@@ -213,8 +213,17 @@ impl State {
 
     fn load_user_config_from_home(&mut self) {
         if self.home_dir.is_none() {
-            let env_vars = get_session_environment_variables();
-            self.home_dir = env_vars.get("HOME").map(PathBuf::from);
+            self.home_dir = std::env::var_os("HOME").map(PathBuf::from).or_else(|| {
+                // Same race as `get_session_list`: the env-var host call panics
+                // if the host hasn't written a response yet. Catch it so an
+                // unlucky cold-start doesn't trap the whole plugin.
+                let env_vars = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                    get_session_environment_variables,
+                ))
+                .ok()
+                .unwrap_or_default();
+                env_vars.get("HOME").map(PathBuf::from)
+            });
         }
         let theme_dir = self
             .user_theme_dir
@@ -224,7 +233,14 @@ impl State {
     }
 
     fn refresh_sessions(&mut self) {
-        if let Ok(snapshot) = get_session_list() {
+        // zellij-tile 0.44.3's `get_session_list` shim does
+        // `bytes_from_stdin().unwrap()` (shim.rs:1959), which panics when the
+        // host is mid-transition (e.g. right after `switch_session_with_focus`
+        // spawns a fresh plugin instance in the target session). Guard the
+        // call with `catch_unwind` so a transient race trips a single skipped
+        // refresh instead of bringing down the whole plugin.
+        let snapshot = std::panic::catch_unwind(std::panic::AssertUnwindSafe(get_session_list));
+        if let Ok(Ok(snapshot)) = snapshot {
             self.sessions = snapshot.live_sessions;
         }
     }
@@ -578,7 +594,12 @@ impl State {
         for (line, item) in visible[offset..end].iter().enumerate() {
             let row = LIST_START_ROW + line;
             if !item.selectable {
-                let text = Text::new(truncate_line(&format!("{}:", item.title), cols)).color_all(2);
+                let line = if let Some(prefix) = &item.tree_prefix {
+                    format!("{prefix}{}", item.title)
+                } else {
+                    format!("{}:", item.title)
+                };
+                let text = Text::new(truncate_line(&line, cols)).color_all(2);
                 print_text_with_coordinates(text, 0, row, Some(cols), None);
                 continue;
             }
@@ -1175,11 +1196,10 @@ fn description_for_pane(session: &SessionInfo, tab: &TabInfo, pane: &PaneInfo) -
     } else {
         kind
     };
-    let command = pane
-        .terminal_command
-        .clone()
-        .unwrap_or_else(|| kind.to_owned());
-    format!("{marker} · {command}")
+    match pane.terminal_command.as_deref() {
+        Some(command) if !command.is_empty() => format!("{marker} · {command}"),
+        _ => marker.to_owned(),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1240,8 +1260,10 @@ fn item_line(item: &PaletteItem, cols: usize) -> RenderedLine {
         segments.push(("  ".to_owned(), None));
     }
     segments.push((item.title.clone(), None));
-    if let Some(alias) = item.aliases.first() {
-        segments.push((format!("  [{alias}]"), Some(LineStyle::Alias)));
+    if item.tree_prefix.is_none() {
+        if let Some(alias) = item.aliases.first() {
+            segments.push((format!("  [{alias}]"), Some(LineStyle::Alias)));
+        }
     }
     if let Some(description) = &item.description {
         segments.push((format!("  {description}"), Some(LineStyle::Muted)));

@@ -90,18 +90,16 @@ fn synthetic_item(session_name: &str, tab_name: &str, pane: &PaneRow) -> Palette
 pub fn flatten(tree: &[SessionGroup]) -> Vec<PaletteItem> {
     let mut out = Vec::new();
     for session in tree {
-        let header_title = if session.is_current {
-            format!("{} (current)", session.name)
-        } else {
-            session.name.clone()
-        };
+        let pane_count: usize = session.tabs.iter().map(|tab| tab.panes.len()).sum();
+        let marker = if session.is_current { "▶ " } else { "  " };
+        let header_title = format!("{marker}{} ({pane_count})", session.name);
         out.push(PaletteItem::group(header_title));
 
         let tab_count = session.tabs.len();
         for (ti, tab) in session.tabs.iter().enumerate() {
             let is_last_tab = ti + 1 == tab_count;
-            let tab_glyph = if is_last_tab { "└─ " } else { "├─ " };
-            let tab_cont = if is_last_tab { "    " } else { "│   " };
+            let tab_glyph = if is_last_tab { "  └─ " } else { "  ├─ " };
+            let tab_cont = if is_last_tab { "      " } else { "  │   " };
 
             if tab.panes.len() == 1 {
                 let pane = &tab.panes[0];
@@ -214,7 +212,7 @@ mod tests {
         let titles: Vec<&str> = items.iter().map(|item| item.title.as_str()).collect();
         assert_eq!(
             titles,
-            vec!["work (current)", "code", "▶ vim", "○ shell", "● obsidian",]
+            vec!["▶ work (3)", "code", "▶ vim", "○ shell", "● obsidian",]
         );
     }
 
@@ -223,10 +221,10 @@ mod tests {
         let items = flatten(&sample_tree());
         // tab "code" is not the last tab -> ├─; tab "notes" is hoisted (single pane) at last -> └─
         assert_eq!(items[0].tree_prefix, None); // session header
-        assert_eq!(items[1].tree_prefix.as_deref(), Some("├─ ")); // "code" tab header
-        assert_eq!(items[2].tree_prefix.as_deref(), Some("│   ├─ ")); // vim
-        assert_eq!(items[3].tree_prefix.as_deref(), Some("│   └─ ")); // shell (last pane)
-        assert_eq!(items[4].tree_prefix.as_deref(), Some("└─ ")); // hoisted obsidian
+        assert_eq!(items[1].tree_prefix.as_deref(), Some("  ├─ ")); // "code" tab header
+        assert_eq!(items[2].tree_prefix.as_deref(), Some("  │   ├─ ")); // vim
+        assert_eq!(items[3].tree_prefix.as_deref(), Some("  │   └─ ")); // shell (last pane)
+        assert_eq!(items[4].tree_prefix.as_deref(), Some("  └─ ")); // hoisted obsidian
     }
 
     #[test]
@@ -239,8 +237,8 @@ mod tests {
         let items = flatten(&tree);
         let titles: Vec<&str> = items.iter().map(|item| item.title.as_str()).collect();
         // session header, then a hoisted pane row (no tab header)
-        assert_eq!(titles, vec!["solo", "● alone"]);
-        assert_eq!(items[1].tree_prefix.as_deref(), Some("└─ "));
+        assert_eq!(titles, vec!["  solo (1)", "● alone"]);
+        assert_eq!(items[1].tree_prefix.as_deref(), Some("  └─ "));
     }
 
     #[test]
