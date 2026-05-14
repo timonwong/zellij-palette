@@ -7,6 +7,7 @@ use zellij_palette::kdl::escape_kdl_string;
 use zellij_palette::model::{
     CommandAction, PaletteAction, PaletteId, PaletteItem, PaneTarget, ThemeAction,
 };
+use zellij_palette::pane_tree::{self, PaneRow, SessionGroup, TabGroup};
 use zellij_palette::selection::{list_offset, next_selectable, normalize_selection};
 use zellij_palette::state::{PermissionState, permission_placeholder_items};
 use zellij_palette::user_config::{
@@ -179,7 +180,9 @@ impl ZellijPlugin for State {
             Event::Key(key) => self.handle_key(key),
             Event::Mouse(mouse) => self.handle_mouse(mouse),
             Event::Visible(true) => {
-                if self.permission_state == PermissionState::Granted {
+                if self.permission_state == PermissionState::Granted
+                    && self.active_palette_needs_sessions()
+                {
                     self.refresh_sessions();
                 }
                 true
@@ -201,7 +204,9 @@ impl ZellijPlugin for State {
 impl State {
     fn finish_startup_after_permissions(&mut self) {
         self.load_user_config_from_home();
-        self.refresh_sessions();
+        if self.active_palette_needs_sessions() {
+            self.refresh_sessions();
+        }
         if let Some(ActivePalette::Custom(name)) = self.active_palette.clone() {
             self.maybe_request_custom_palette_data(&name);
         }
@@ -210,10 +215,28 @@ impl State {
         }
     }
 
+    // `get_session_list()` panics if the host has not finished wiring up the
+    // freshly-spawned plugin instance — see comment above `quiet_host_call`.
+    // `wasm32-wasip1` is panic=abort so we cannot catch it; the only viable
+    // mitigation is to skip the call when the active palette would not use
+    // the data anyway (custom palettes, theme palette, …).
+    fn active_palette_needs_sessions(&self) -> bool {
+        matches!(
+            self.active_palette,
+            Some(ActivePalette::BuiltIn(
+                PaletteId::FindPane | PaletteId::Sessions | PaletteId::MovePane
+            ))
+        )
+    }
+
     fn load_user_config_from_home(&mut self) {
         if self.home_dir.is_none() {
-            let env_vars = get_session_environment_variables();
-            self.home_dir = env_vars.get("HOME").map(PathBuf::from);
+            self.home_dir = std::env::var_os("HOME").map(PathBuf::from).or_else(|| {
+                quiet_host_call(get_session_environment_variables)
+                    .unwrap_or_default()
+                    .get("HOME")
+                    .map(PathBuf::from)
+            });
         }
         let theme_dir = self
             .user_theme_dir
@@ -223,7 +246,7 @@ impl State {
     }
 
     fn refresh_sessions(&mut self) {
-        if let Ok(snapshot) = get_session_list() {
+        if let Some(Ok(snapshot)) = quiet_host_call(get_session_list) {
             self.sessions = snapshot.live_sessions;
         }
     }
@@ -305,6 +328,11 @@ impl State {
             self.active_palette = Some(previous.active_palette);
             self.query = previous.query;
             self.selected = previous.selected;
+            if self.permission_state == PermissionState::Granted
+                && self.active_palette_needs_sessions()
+            {
+                self.refresh_sessions();
+            }
             return;
         }
         close_self();
@@ -492,6 +520,15 @@ impl State {
         self.active_palette = Some(active_palette.clone());
         self.query.clear();
         self.selected = 0;
+        // The cold-start refresh was gated on the *initial* palette needing
+        // sessions, so navigating from e.g. Commands -> Find Pane would land
+        // with an empty session list. Refresh here too — at navigation time
+        // the user has already interacted with the plugin, so the host is
+        // settled and the call won't race.
+        if self.permission_state == PermissionState::Granted && self.active_palette_needs_sessions()
+        {
+            self.refresh_sessions();
+        }
         if let ActivePalette::Custom(name) = active_palette {
             self.maybe_request_custom_palette_data(&name);
         }
@@ -577,7 +614,12 @@ impl State {
         for (line, item) in visible[offset..end].iter().enumerate() {
             let row = LIST_START_ROW + line;
             if !item.selectable {
-                let text = Text::new(truncate_line(&format!("{}:", item.title), cols)).color_all(2);
+                let line = if let Some(prefix) = &item.tree_prefix {
+                    format!("{prefix}{}", item.title)
+                } else {
+                    format!("{}:", item.title)
+                };
+                let text = Text::new(truncate_line(&line, cols)).color_all(2);
                 print_text_with_coordinates(text, 0, row, Some(cols), None);
                 continue;
             }
@@ -621,6 +663,12 @@ impl State {
 
     fn visible_items(&self) -> Vec<PaletteItem> {
         let items = self.palette_items();
+        if matches!(
+            self.active_palette,
+            Some(ActivePalette::BuiltIn(PaletteId::FindPane))
+        ) {
+            return items;
+        }
         if self.query.trim().is_empty() {
             return items;
         }
@@ -788,51 +836,57 @@ impl State {
     }
 
     fn find_pane_items(&self) -> Vec<PaletteItem> {
-        let mut items = Vec::new();
+        let tree = self.build_pane_tree();
+        let tree = pane_tree::filter(tree, &self.query);
+        pane_tree::flatten(&tree)
+    }
+
+    fn build_pane_tree(&self) -> Vec<SessionGroup> {
         let own_plugin_id = self.own_plugin_id;
+        let mut out = Vec::new();
         for session in &self.sessions {
-            items.push(PaletteItem::group(if session.is_current_session {
-                format!("{} (current)", session.name)
-            } else {
-                session.name.clone()
-            }));
+            let mut tabs = Vec::new();
             for tab in &session.tabs {
-                if let Some(panes) = session.panes.panes.get(&tab.position) {
-                    for pane in panes.iter().filter(|pane| {
+                let Some(panes) = session.panes.panes.get(&tab.position) else {
+                    continue;
+                };
+                let panes: Vec<PaneRow> = panes
+                    .iter()
+                    .filter(|pane| {
                         pane.is_selectable
                             && !pane.is_suppressed
                             && !(pane.is_plugin && own_plugin_id == Some(pane.id))
-                    }) {
-                        let aliases = [
-                            session.name.as_str(),
-                            tab.name.as_str(),
-                            pane.title.as_str(),
-                            pane.terminal_command.as_deref().unwrap_or(""),
-                        ];
-                        let mut item = PaletteItem::leaf(
-                            format!("[{}] {}", tab.name, pane.title),
-                            PaletteAction::FocusPane(PaneTarget {
-                                session_name: session.name.clone(),
-                                tab_position: tab.position,
-                                tab_id: tab.tab_id,
-                                pane_id: pane.id,
-                                is_plugin: pane.is_plugin,
-                            }),
-                        )
-                        .with_icon(if pane.is_plugin { "" } else { "󰆍" })
-                        .with_category("Panes")
-                        .with_description(description_for_pane(session, tab, pane));
-                        item.aliases = aliases
-                            .into_iter()
-                            .filter(|value| !value.is_empty())
-                            .map(str::to_owned)
-                            .collect();
-                        items.push(item);
-                    }
+                    })
+                    .map(|pane| PaneRow {
+                        id: pane.id,
+                        tab_position: tab.position,
+                        tab_id: tab.tab_id,
+                        title: pane.title.clone(),
+                        is_plugin: pane.is_plugin,
+                        is_focused: pane.is_focused,
+                        terminal_command: pane.terminal_command.clone(),
+                        description: description_for_pane(session, tab, pane),
+                    })
+                    .collect();
+                if panes.is_empty() {
+                    continue;
                 }
+                tabs.push(TabGroup {
+                    name: tab.name.clone(),
+                    is_active: tab.active,
+                    panes,
+                });
             }
+            if tabs.is_empty() {
+                continue;
+            }
+            out.push(SessionGroup {
+                name: session.name.clone(),
+                is_current: session.is_current_session,
+                tabs,
+            });
         }
-        items
+        out
     }
 
     fn session_items(&self) -> Vec<PaletteItem> {
@@ -1120,6 +1174,30 @@ fn floating_coordinates(
     )
 }
 
+// zellij-tile 0.44.3's stdin-reading host shims (`get_session_list`,
+// `get_session_environment_variables`, …) do `bytes_from_stdin().unwrap()`,
+// which panics whenever the host has not written a response yet. This races
+// during plugin cold-start in a freshly switched-to session: the new instance
+// gets `PermissionRequestResult(Granted)` before Zellij's session monitor is
+// ready to answer queries.
+//
+// The real fix is to skip these calls when the active palette would not use
+// the data — see `active_palette_needs_sessions`. For the residual cases
+// (find-pane / sessions / move-pane palettes themselves), this helper at least
+// silences the verbose `PanicHookInfo` dump that zellij-tile's default hook
+// (`register_plugin!` -> `report_panic`) pushes into the plugin pane.
+//
+// Note: `wasm32-wasip1` is `panic=abort`, so `catch_unwind` does NOT actually
+// catch — the wasm module still traps with `unreachable`. Silencing the hook
+// only trims the cosmetic message; it does not keep the plugin alive.
+fn quiet_host_call<R>(f: impl FnOnce() -> R + std::panic::UnwindSafe) -> Option<R> {
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(f);
+    std::panic::set_hook(prev_hook);
+    result.ok()
+}
+
 fn active_palette_from_config(palette: Option<&str>) -> ActivePalette {
     match palette.unwrap_or("commands") {
         "commands" => ActivePalette::BuiltIn(PaletteId::Commands),
@@ -1162,11 +1240,10 @@ fn description_for_pane(session: &SessionInfo, tab: &TabInfo, pane: &PaneInfo) -
     } else {
         kind
     };
-    let command = pane
-        .terminal_command
-        .clone()
-        .unwrap_or_else(|| kind.to_owned());
-    format!("{marker} · {command}")
+    match pane.terminal_command.as_deref() {
+        Some(command) if !command.is_empty() => format!("{marker} · {command}"),
+        _ => marker.to_owned(),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1214,6 +1291,9 @@ fn item_line(item: &PaletteItem, cols: usize) -> RenderedLine {
     let mut char_len = 0usize;
 
     let mut segments: Vec<(String, Option<LineStyle>)> = Vec::new();
+    if let Some(prefix) = &item.tree_prefix {
+        segments.push((prefix.clone(), Some(LineStyle::Muted)));
+    }
     if let Some(icon) = &item.icon {
         let style = if item.icon_color.is_some() {
             LineStyle::Success
@@ -1224,7 +1304,7 @@ fn item_line(item: &PaletteItem, cols: usize) -> RenderedLine {
         segments.push(("  ".to_owned(), None));
     }
     segments.push((item.title.clone(), None));
-    if let Some(alias) = item.aliases.first() {
+    if let Some(alias) = item.aliases.first().filter(|_| item.tree_prefix.is_none()) {
         segments.push((format!("  [{alias}]"), Some(LineStyle::Alias)));
     }
     if let Some(description) = &item.description {

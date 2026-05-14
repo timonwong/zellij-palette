@@ -119,6 +119,7 @@ pub struct PaletteItem {
     pub shortcut: Option<String>,
     pub icon: Option<String>,
     pub icon_color: Option<String>,
+    pub tree_prefix: Option<String>,
     pub selectable: bool,
     pub action: PaletteAction,
 }
@@ -133,6 +134,7 @@ impl PaletteItem {
             shortcut: None,
             icon: None,
             icon_color: None,
+            tree_prefix: None,
             selectable: true,
             action,
         }
@@ -147,6 +149,7 @@ impl PaletteItem {
             shortcut: None,
             icon: None,
             icon_color: None,
+            tree_prefix: None,
             selectable: false,
             action: PaletteAction::Noop,
         }
@@ -179,6 +182,11 @@ impl PaletteItem {
 
     pub fn with_icon_color(mut self, icon_color: impl Into<String>) -> Self {
         self.icon_color = Some(icon_color.into());
+        self
+    }
+
+    pub fn with_tree_prefix(mut self, tree_prefix: impl Into<String>) -> Self {
+        self.tree_prefix = Some(tree_prefix.into());
         self
     }
 }

@@ -1,6 +1,7 @@
 pub mod fuzzy;
 pub mod kdl;
 pub mod model;
+pub mod pane_tree;
 pub mod selection;
 pub mod state;
 pub mod user_config;
