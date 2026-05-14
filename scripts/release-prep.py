@@ -45,6 +45,25 @@ def compute_cargo_bump(text: str, version: str) -> str | None:
     return text[: m.start(1)] + version + text[m.end(1) :]
 
 
+def compute_lockfile_bump(text: str, version: str) -> str | None:
+    """Return new Cargo.lock content, or None if already at `version`.
+
+    Only the workspace package's own entry needs to change; transitive
+    deps are unaffected by a version bump. Going through `cargo update`
+    requires a populated registry index, which the prep job does not
+    have on a cold cache — text substitution sidesteps that entirely.
+    """
+    pattern = re.compile(
+        r'(\[\[package\]\]\nname = "zellij-palette"\nversion = ")([^"]+)(")'
+    )
+    m = pattern.search(text)
+    if not m:
+        die("Cargo.lock has no `zellij-palette` package entry")
+    if m.group(2) == version:
+        return None
+    return text[: m.start(2)] + version + text[m.end(2) :]
+
+
 def regenerate_changelog(repo_root: pathlib.Path, version: str) -> bool:
     """Run git-cliff to rewrite CHANGELOG.md.
 
@@ -100,10 +119,13 @@ def main() -> int:
     version = normalize_version(args.version)
     root = pathlib.Path(args.repo_root).resolve()
     cargo = root / "Cargo.toml"
+    lockfile = root / "Cargo.lock"
     cliff = root / "cliff.toml"
 
     if not cargo.is_file():
         die(f"{cargo} not found")
+    if not lockfile.is_file():
+        die(f"{lockfile} not found")
     if not cliff.is_file():
         die(f"{cliff} not found")
 
@@ -116,9 +138,15 @@ def main() -> int:
     if new_cargo is not None:
         cargo.write_text(new_cargo)
 
+    new_lock = compute_lockfile_bump(lockfile.read_text(), version)
+    if new_lock is not None:
+        lockfile.write_text(new_lock)
+
     actions = []
     if new_cargo is not None:
         actions.append("bumped Cargo.toml")
+    if new_lock is not None:
+        actions.append("bumped Cargo.lock")
     if changelog_changed:
         actions.append("regenerated CHANGELOG.md")
     if actions:
