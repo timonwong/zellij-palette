@@ -1,8 +1,0 @@
-{
-  "title": "GitHub PRs",
-  "fromCategory": "Tools",
-  "icon": "󰘬",
-  "iconColor": "#58a6ff",
-  "command": "gh pr list --limit 20 --json number,title --jq '.[] | \"#\\(.number) \\(.title)\"'",
-  "action": { "popup": "open {}" }
-}

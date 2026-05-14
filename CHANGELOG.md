@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- User config files can now be authored as TOML, YAML, or JSON. When
+  multiple variants of the same name exist, the loader prefers TOML,
+  then YAML, then JSON; a broken higher-priority file no longer
+  silently falls through to a lower-priority sibling. Snake_case keys
+  (`icon_color`, `from_category`, `from_group`, `empty_text`) are now
+  accepted alongside the existing camelCase forms. Existing JSON
+  configs keep working unchanged.
+
 ### Fixed
 - Mouse clicks in the palette list now resolve to the correct item regardless
   of the palette pane height. `select_line` previously computed its scroll
@@ -17,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Selection logic (`next_selectable`, `normalize_selection`, `list_offset`)
   moved to a new `selection` module as pure functions with dedicated unit
   tests. `State`'s methods now delegate to them. No behaviour change.
+- Bundled samples under `examples/` were rewritten from JSON to TOML
+  (`commands`, `shortcuts`, `aliases`, `hidden`, `palettes/github-prs`).
+  TOML is now the documented default in the README; JSON remains a
+  supported authoring format.
 
 ### Removed
 - Dead `PaletteState` / `PaletteSnapshot` implementation in `src/state.rs`

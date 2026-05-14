@@ -1,0 +1,6 @@
+title = "GitHub PRs"
+from_category = "Tools"
+icon = "󰘬"
+icon_color = "#58a6ff"
+command = "gh pr list --limit 20 --json number,title --jq '.[] | \"#\\(.number) \\(.title)\"'"
+action = { popup = "open {}" }
