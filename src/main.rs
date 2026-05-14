@@ -48,7 +48,6 @@ struct State {
     permission_state: PermissionState,
     message: Option<String>,
     last_rows: usize,
-    last_cols: usize,
 }
 
 register_plugin!(State);
@@ -132,7 +131,6 @@ impl ZellijPlugin for State {
 
     fn render(&mut self, rows: usize, cols: usize) {
         self.last_rows = rows;
-        self.last_cols = cols;
         self.ensure_selection();
         self.render_header(cols);
         self.render_search(cols);
