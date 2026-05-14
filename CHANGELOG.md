@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.2.1] - 2026-05-14
+
+### Added
+
+- render sessions, tabs, and panes as a tree (#14)
+
 ## [0.2.0] - 2026-05-14
 
 ### Changed
@@ -100,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unused `last_cols` field on `State` (introduced and removed within the
   same Unreleased cycle).
 
-[Unreleased]: https://github.com/timonwong/zellij-palette/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/timonwong/zellij-palette/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/timonwong/zellij-palette/releases/tag/v0.2.1
 [0.2.0]: https://github.com/timonwong/zellij-palette/releases/tag/v0.2.0
 [0.1.0]: https://github.com/timonwong/zellij-palette/releases/tag/v0.1.0
 
