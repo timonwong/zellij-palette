@@ -24,10 +24,7 @@ pub fn normalize_selection(items: &[PaletteItem], current: usize) -> usize {
     if items.get(current).is_some_and(|item| item.selectable) {
         return current;
     }
-    items
-        .iter()
-        .position(|item| item.selectable)
-        .unwrap_or(0)
+    items.iter().position(|item| item.selectable).unwrap_or(0)
 }
 
 pub fn list_offset(selected: usize, item_count: usize, list_rows: usize) -> usize {

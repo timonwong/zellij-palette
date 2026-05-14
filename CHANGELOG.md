@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`icon_color`, `from_category`, `from_group`, `empty_text`) are now
   accepted alongside the existing camelCase forms. Existing JSON
   configs keep working unchanged.
+- A repo-local `mise.toml` now pins Rust 1.86, installs the
+  `wasm32-wasip1` target plus `rustfmt` / `clippy`, and exposes
+  `mise run` tasks for `build`, `test`, `fmt`, `clippy`, and local
+  `install` into `~/.config/zellij/plugins/zellij-palette.wasm`. The
+  host-side tasks resolve the active Rust host triple at runtime, so
+  the same task names work on macOS and Linux.
 
 ### Fixed
 - Mouse clicks in the palette list now resolve to the correct item regardless
