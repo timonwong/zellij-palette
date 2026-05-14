@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use zellij_palette::focus::{FocusPanePlan, plan_focus_pane, should_list_find_pane_item};
 use zellij_palette::fuzzy::filter_items;
 use zellij_palette::kdl::escape_kdl_string;
 use zellij_palette::model::{
@@ -347,11 +348,23 @@ impl State {
                 self.push_palette(ActivePalette::Custom(name));
             }
             PaletteAction::FocusPane(target) => {
-                switch_session_with_focus(
-                    &target.session_name,
-                    Some(target.tab_position),
-                    Some((target.pane_id, target.is_plugin)),
-                );
+                match plan_focus_pane(self.current_session_name(), &target) {
+                    FocusPanePlan::CurrentSession { .. } => {
+                        focus_pane_with_id(pane_id(&target), true, true);
+                    }
+                    FocusPanePlan::OtherSession {
+                        session_name,
+                        tab_position,
+                        pane_id,
+                        is_plugin,
+                    } => {
+                        switch_session_with_focus(
+                            &session_name,
+                            Some(tab_position),
+                            Some((pane_id, is_plugin)),
+                        );
+                    }
+                }
                 close_self();
             }
             PaletteAction::MovePaneToNewTab(source) => {
@@ -785,6 +798,7 @@ impl State {
 
     fn find_pane_items(&self) -> Vec<PaletteItem> {
         let mut items = Vec::new();
+        let own_plugin_id = self.own_plugin_id;
         for session in &self.sessions {
             items.push(PaletteItem::group(if session.is_current_session {
                 format!("{} (current)", session.name)
@@ -793,10 +807,15 @@ impl State {
             }));
             for tab in &session.tabs {
                 if let Some(panes) = session.panes.panes.get(&tab.position) {
-                    for pane in panes
-                        .iter()
-                        .filter(|pane| pane.is_selectable && !pane.is_suppressed)
-                    {
+                    for pane in panes.iter().filter(|pane| {
+                        should_list_find_pane_item(
+                            pane.id,
+                            pane.is_plugin,
+                            pane.is_selectable,
+                            pane.is_suppressed,
+                            own_plugin_id,
+                        )
+                    }) {
                         let aliases = [
                             session.name.as_str(),
                             tab.name.as_str(),
@@ -1033,6 +1052,13 @@ impl State {
             })
     }
 
+    fn current_session_name(&self) -> Option<&str> {
+        self.sessions
+            .iter()
+            .find(|session| session.is_current_session)
+            .map(|session| session.name.as_str())
+    }
+
     fn caller_pane_target(&self) -> Option<PaneTarget> {
         let client_id = self.own_client_id?;
         let own_plugin_id = self.own_plugin_id?;
@@ -1080,11 +1106,12 @@ fn group_items_by_category(items: Vec<PaletteItem>) -> Vec<PaletteItem> {
             grouped.push(item);
             continue;
         }
-        if let Some(category) = &item.category
-            && last_category.as_deref() != Some(category.as_str())
-        {
-            grouped.push(PaletteItem::group(category.clone()));
-            last_category = Some(category.clone());
+        match &item.category {
+            Some(category) if last_category.as_deref() != Some(category.as_str()) => {
+                grouped.push(PaletteItem::group(category.clone()));
+                last_category = Some(category.clone());
+            }
+            _ => {}
         }
         grouped.push(item);
     }

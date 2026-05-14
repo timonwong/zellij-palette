@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the palette pane height. `select_line` previously computed its scroll
   offset against a hard-coded constant of 20 rows, so clicks on any pane
   shorter or taller than 20 rows could activate the wrong row.
+- `Find Pane` / `Select Pane` now jumps correctly inside the current session.
+  Targets in the active session use direct pane focus, which switches tab/layer
+  by pane id; cross-session targets still use session switching with focus.
+- `Find Pane` / `Select Pane` no longer lists the palette plugin pane itself.
+  The chooser now filters out the current plugin pane while keeping other
+  selectable panes, including other plugin panes.
 
 ### Changed
 - README and `examples/config.kdl` now load the plugin straight from
