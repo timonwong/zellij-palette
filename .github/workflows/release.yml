@@ -93,17 +93,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends pkg-config libssl-dev
 
-      - name: Bump Cargo.toml and regenerate CHANGELOG.md
+      - name: Bump Cargo.toml / Cargo.lock and regenerate CHANGELOG.md
         env:
           VERSION: ${{ steps.resolve.outputs.version }}
         run: python3 scripts/release-prep.py --version "${VERSION}"
-
-      - name: Sync Cargo.lock to bumped Cargo.toml
-        # Only refresh this package's own version entry in Cargo.lock —
-        # cargo check --offline fails the first time the prep cache is
-        # cold because the registry index hasn't been primed yet, and
-        # we don't need any dependency re-resolution for a version bump.
-        run: cargo update -p zellij-palette --offline
 
       - name: Gate — cargo fmt
         run: cargo fmt --all -- --check
