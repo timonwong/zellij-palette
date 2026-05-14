@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-14
+
 ### Added
 - README now credits `tmux-palette` (by @eduwass) up front as the design
   source, and carries an explicit "AI slop" disclaimer so readers know
@@ -83,4 +85,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unused `last_cols` field on `State` (introduced and removed within the
   same Unreleased cycle).
 
-[Unreleased]: https://github.com/timonwong/zellij-palette/compare/HEAD...HEAD
+[Unreleased]: https://github.com/timonwong/zellij-palette/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/timonwong/zellij-palette/releases/tag/v0.1.0
