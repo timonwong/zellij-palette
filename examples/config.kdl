@@ -1,0 +1,32 @@
+plugins {
+    zellij-palette location="file:__WASM__"
+    zellij-palette-themes location="file:__WASM__" {
+        palette "themes"
+    }
+    zellij-palette-tools location="file:__WASM__" {
+        category "Tools"
+    }
+}
+
+keybinds {
+    normal {
+        bind "Ctrl p" {
+            LaunchOrFocusPlugin "zellij-palette" {
+                floating true
+                move_to_focused_tab true
+            }
+        }
+        bind "Alt t" {
+            LaunchOrFocusPlugin "zellij-palette-themes" {
+                floating true
+                move_to_focused_tab true
+            }
+        }
+        bind "Alt o" {
+            LaunchOrFocusPlugin "zellij-palette-tools" {
+                floating true
+                move_to_focused_tab true
+            }
+        }
+    }
+}

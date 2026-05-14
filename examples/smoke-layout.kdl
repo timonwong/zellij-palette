@@ -1,0 +1,10 @@
+layout {
+    tab {
+        pane split_direction="Vertical" {
+            pane size="70%"
+            pane size="30%" {
+                plugin location="file:__WASM__"
+            }
+        }
+    }
+}
