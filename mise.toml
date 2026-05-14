@@ -1,0 +1,23 @@
+[tools]
+rust = { version = "1.86", components = "rustfmt,clippy", targets = "wasm32-wasip1" }
+
+[tasks.build]
+description = "Build the release WASM plugin"
+run = "cargo build --release"
+
+[tasks.test]
+description = "Run host-side unit tests"
+run = 'HOST_TRIPLE="$(rustc -vV | sed -n "s/^host: //p")"; cargo test --lib --target "$HOST_TRIPLE"'
+
+[tasks.install]
+description = "Install the built WASM into the local Zellij plugin dir"
+depends = ["build"]
+run = "mkdir -p ~/.config/zellij/plugins && cp target/wasm32-wasip1/release/zellij-palette.wasm ~/.config/zellij/plugins/zellij-palette.wasm"
+
+[tasks.fmt]
+description = "Format the Rust workspace"
+run = "cargo fmt --all"
+
+[tasks.clippy]
+description = "Lint host-side targets with warnings denied"
+run = 'HOST_TRIPLE="$(rustc -vV | sed -n "s/^host: //p")"; cargo clippy --all-targets --target "$HOST_TRIPLE" -- -D warnings'

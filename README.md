@@ -21,7 +21,8 @@ It opens as a Zellij plugin pane, lets you fuzzy-search actions, and dispatches 
 ## Build
 
 ```bash
-mise exec rust@stable -- cargo build --release
+mise install
+mise run build
 ```
 
 The plugin artifact is:
@@ -29,6 +30,23 @@ The plugin artifact is:
 ```bash
 target/wasm32-wasip1/release/zellij-palette.wasm
 ```
+
+Common tasks live in [`mise.toml`](mise.toml):
+
+```bash
+mise run test
+mise run fmt
+mise run clippy
+mise run install
+```
+
+The Rust toolchain, `wasm32-wasip1` target, `rustfmt`, and `clippy`
+are all declared in `mise.toml`, so `mise install` prepares the full
+repo toolchain.
+
+If you already had Rust 1.86 installed before this file existed, run
+`mise install -f rust` once so `mise` can reconcile the target and
+components onto the existing toolchain.
 
 ## Bind It In Zellij
 
@@ -275,7 +293,7 @@ backward compatibility):
 ## Smoke test
 
 1. Build the plugin.
-2. Copy [examples/config.kdl](examples/config.kdl) and replace `__WASM__` with the absolute wasm path.
+2. Copy [examples/config.kdl](examples/config.kdl) and replace `__WASM__` with either the absolute build path above or `~/.config/zellij/plugins/zellij-palette.wasm` after `mise run install`.
 3. Copy any wanted example TOML files from [examples/](examples/) into `~/.config/zellij-palette/`.
 4. Start Zellij with that config.
 5. Press `Ctrl-p`, `Alt-t`, and `Alt-o`.

@@ -46,13 +46,14 @@ published to crates.io.
 
 ```bash
 # Wasm build (this is the artifact consumers load)
-mise exec rust@stable -- cargo build --release
+mise install
+mise run build
 
 # Host tests — wasm32-wasip1 is the default target via .cargo/config.toml,
-# so cargo test needs an explicit host target override. The build also
-# pulls openssl-sys transitively through zellij-utils, which requires
-# pkg-config + libssl-dev on the host.
-mise exec rust@stable -- cargo test --lib --target x86_64-unknown-linux-gnu
+# so tests need an explicit host-target override. `mise run test` resolves
+# the active Rust host triple at runtime, so the same repo-local command
+# works on macOS and Linux.
+mise run test
 ```
 
 `cargo test` without `--target` will fail on `core` because wasm32-wasip1
