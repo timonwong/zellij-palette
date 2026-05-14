@@ -6,6 +6,8 @@ fuzzy-match flow, category overlays, custom-palette config layout, and
 shell-backed palette sources are all his design — this project is a port of
 those ideas onto Zellij's plugin model.
 
+![demo](assets/demo.png)
+
 > **Heads up — this is mostly "AI slop."**
 > The implementation is overwhelmingly AI-generated ("vibe-coded"). It works
 > for the author's daily Zellij use, but expect rough edges, inconsistent
