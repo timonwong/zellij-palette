@@ -94,30 +94,35 @@ fn item_haystack(item: &PaletteItem) -> String {
     parts.join(" ")
 }
 
-pub fn filter_items(items: &[PaletteItem], query: &str) -> Vec<PaletteItem> {
+pub fn score_item(item: &PaletteItem, query: &str) -> Option<usize> {
     let parts: Vec<_> = query
         .split_whitespace()
         .map(str::trim)
         .filter(|part| !part.is_empty())
         .collect();
     if parts.is_empty() {
+        return Some(1);
+    }
+    let haystack = item_haystack(item);
+    let mut total_score = 0usize;
+    for part in &parts {
+        let score = fuzzy_score(&haystack, part);
+        if score == 0 {
+            return None;
+        }
+        total_score += score;
+    }
+    Some(total_score.max(1))
+}
+
+pub fn filter_items(items: &[PaletteItem], query: &str) -> Vec<PaletteItem> {
+    if query.split_whitespace().next().is_none() {
         return items.to_vec();
     }
 
     let mut matches: Vec<(usize, PaletteItem)> = items
         .iter()
-        .filter_map(|item| {
-            let haystack = item_haystack(item);
-            let mut total_score = 0usize;
-            for part in &parts {
-                let score = fuzzy_score(&haystack, part);
-                if score == 0 {
-                    return None;
-                }
-                total_score += score;
-            }
-            Some((total_score.max(1), item.clone()))
-        })
+        .filter_map(|item| score_item(item, query).map(|score| (score, item.clone())))
         .collect();
 
     matches.sort_by(|left, right| {

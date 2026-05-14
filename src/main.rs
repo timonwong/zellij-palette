@@ -7,6 +7,7 @@ use zellij_palette::kdl::escape_kdl_string;
 use zellij_palette::model::{
     CommandAction, PaletteAction, PaletteId, PaletteItem, PaneTarget, ThemeAction,
 };
+use zellij_palette::pane_tree::{self, PaneRow, SessionGroup, TabGroup};
 use zellij_palette::selection::{list_offset, next_selectable, normalize_selection};
 use zellij_palette::state::{PermissionState, permission_placeholder_items};
 use zellij_palette::user_config::{
@@ -621,6 +622,12 @@ impl State {
 
     fn visible_items(&self) -> Vec<PaletteItem> {
         let items = self.palette_items();
+        if matches!(
+            self.active_palette,
+            Some(ActivePalette::BuiltIn(PaletteId::FindPane))
+        ) {
+            return items;
+        }
         if self.query.trim().is_empty() {
             return items;
         }
@@ -788,51 +795,57 @@ impl State {
     }
 
     fn find_pane_items(&self) -> Vec<PaletteItem> {
-        let mut items = Vec::new();
+        let tree = self.build_pane_tree();
+        let tree = pane_tree::filter(tree, &self.query);
+        pane_tree::flatten(&tree)
+    }
+
+    fn build_pane_tree(&self) -> Vec<SessionGroup> {
         let own_plugin_id = self.own_plugin_id;
+        let mut out = Vec::new();
         for session in &self.sessions {
-            items.push(PaletteItem::group(if session.is_current_session {
-                format!("{} (current)", session.name)
-            } else {
-                session.name.clone()
-            }));
+            let mut tabs = Vec::new();
             for tab in &session.tabs {
-                if let Some(panes) = session.panes.panes.get(&tab.position) {
-                    for pane in panes.iter().filter(|pane| {
+                let Some(panes) = session.panes.panes.get(&tab.position) else {
+                    continue;
+                };
+                let panes: Vec<PaneRow> = panes
+                    .iter()
+                    .filter(|pane| {
                         pane.is_selectable
                             && !pane.is_suppressed
                             && !(pane.is_plugin && own_plugin_id == Some(pane.id))
-                    }) {
-                        let aliases = [
-                            session.name.as_str(),
-                            tab.name.as_str(),
-                            pane.title.as_str(),
-                            pane.terminal_command.as_deref().unwrap_or(""),
-                        ];
-                        let mut item = PaletteItem::leaf(
-                            format!("[{}] {}", tab.name, pane.title),
-                            PaletteAction::FocusPane(PaneTarget {
-                                session_name: session.name.clone(),
-                                tab_position: tab.position,
-                                tab_id: tab.tab_id,
-                                pane_id: pane.id,
-                                is_plugin: pane.is_plugin,
-                            }),
-                        )
-                        .with_icon(if pane.is_plugin { "" } else { "󰆍" })
-                        .with_category("Panes")
-                        .with_description(description_for_pane(session, tab, pane));
-                        item.aliases = aliases
-                            .into_iter()
-                            .filter(|value| !value.is_empty())
-                            .map(str::to_owned)
-                            .collect();
-                        items.push(item);
-                    }
+                    })
+                    .map(|pane| PaneRow {
+                        id: pane.id,
+                        tab_position: tab.position,
+                        tab_id: tab.tab_id,
+                        title: pane.title.clone(),
+                        is_plugin: pane.is_plugin,
+                        is_focused: pane.is_focused,
+                        terminal_command: pane.terminal_command.clone(),
+                        description: description_for_pane(session, tab, pane),
+                    })
+                    .collect();
+                if panes.is_empty() {
+                    continue;
                 }
+                tabs.push(TabGroup {
+                    name: tab.name.clone(),
+                    is_active: tab.active,
+                    panes,
+                });
             }
+            if tabs.is_empty() {
+                continue;
+            }
+            out.push(SessionGroup {
+                name: session.name.clone(),
+                is_current: session.is_current_session,
+                tabs,
+            });
         }
-        items
+        out
     }
 
     fn session_items(&self) -> Vec<PaletteItem> {
@@ -1214,6 +1227,9 @@ fn item_line(item: &PaletteItem, cols: usize) -> RenderedLine {
     let mut char_len = 0usize;
 
     let mut segments: Vec<(String, Option<LineStyle>)> = Vec::new();
+    if let Some(prefix) = &item.tree_prefix {
+        segments.push((prefix.clone(), Some(LineStyle::Muted)));
+    }
     if let Some(icon) = &item.icon {
         let style = if item.icon_color.is_some() {
             LineStyle::Success
