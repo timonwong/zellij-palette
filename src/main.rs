@@ -47,6 +47,8 @@ struct State {
     root_category: Option<String>,
     permission_state: PermissionState,
     message: Option<String>,
+    last_rows: usize,
+    last_cols: usize,
 }
 
 register_plugin!(State);
@@ -129,6 +131,8 @@ impl ZellijPlugin for State {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
+        self.last_rows = rows;
+        self.last_cols = cols;
         self.ensure_selection();
         self.render_header(cols);
         self.render_search(cols);
@@ -266,10 +270,10 @@ impl State {
 
     fn select_line(&mut self, line: isize) {
         let visible = self.visible_items();
-        if visible.is_empty() || line < LIST_START_ROW as isize {
+        if visible.is_empty() || line < LIST_START_ROW as isize || self.last_rows == 0 {
             return;
         }
-        let max_rows = self.list_rows(self.last_rendered_rows_guess());
+        let max_rows = self.list_rows(self.last_rows);
         let start = self.list_offset(visible.len(), max_rows);
         let relative_line = line as usize - LIST_START_ROW;
         let index = start + relative_line;
@@ -950,13 +954,6 @@ impl State {
             let max_offset = item_count.saturating_sub(list_rows);
             self.selected.saturating_sub(list_rows / 2).min(max_offset)
         }
-    }
-
-    fn last_rendered_rows_guess(&self) -> usize {
-        self.mode_info
-            .as_ref()
-            .and_then(|mode_info| mode_info.session_name.as_ref().map(|_| 20usize))
-            .unwrap_or(20)
     }
 
     fn palette_title(&self) -> String {
