@@ -525,8 +525,7 @@ impl State {
         // with an empty session list. Refresh here too — at navigation time
         // the user has already interacted with the plugin, so the host is
         // settled and the call won't race.
-        if self.permission_state == PermissionState::Granted
-            && self.active_palette_needs_sessions()
+        if self.permission_state == PermissionState::Granted && self.active_palette_needs_sessions()
         {
             self.refresh_sessions();
         }

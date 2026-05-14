@@ -98,7 +98,11 @@ pub fn flatten(tree: &[SessionGroup]) -> Vec<PaletteItem> {
         let tab_count = session.tabs.len();
         for (ti, tab) in session.tabs.iter().enumerate() {
             let is_last_tab = ti + 1 == tab_count;
-            let tab_glyph = if is_last_tab { "  └─ " } else { "  ├─ " };
+            let tab_glyph = if is_last_tab {
+                "  └─ "
+            } else {
+                "  ├─ "
+            };
             let tab_cont = if is_last_tab { "      " } else { "  │   " };
 
             if tab.panes.len() == 1 {
