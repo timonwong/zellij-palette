@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
-use zellij_palette::focus::{FocusPanePlan, plan_focus_pane, should_list_find_pane_item};
 use zellij_palette::fuzzy::filter_items;
 use zellij_palette::kdl::escape_kdl_string;
 use zellij_palette::model::{
@@ -348,22 +347,14 @@ impl State {
                 self.push_palette(ActivePalette::Custom(name));
             }
             PaletteAction::FocusPane(target) => {
-                match plan_focus_pane(self.current_session_name(), &target) {
-                    FocusPanePlan::CurrentSession { .. } => {
-                        focus_pane_with_id(pane_id(&target), true, true);
-                    }
-                    FocusPanePlan::OtherSession {
-                        session_name,
-                        tab_position,
-                        pane_id,
-                        is_plugin,
-                    } => {
-                        switch_session_with_focus(
-                            &session_name,
-                            Some(tab_position),
-                            Some((pane_id, is_plugin)),
-                        );
-                    }
+                if self.current_session_name() == Some(target.session_name.as_str()) {
+                    focus_pane_with_id(pane_id(&target), true, true);
+                } else {
+                    switch_session_with_focus(
+                        &target.session_name,
+                        Some(target.tab_position),
+                        Some((target.pane_id, target.is_plugin)),
+                    );
                 }
                 close_self();
             }
@@ -808,13 +799,9 @@ impl State {
             for tab in &session.tabs {
                 if let Some(panes) = session.panes.panes.get(&tab.position) {
                     for pane in panes.iter().filter(|pane| {
-                        should_list_find_pane_item(
-                            pane.id,
-                            pane.is_plugin,
-                            pane.is_selectable,
-                            pane.is_suppressed,
-                            own_plugin_id,
-                        )
+                        pane.is_selectable
+                            && !pane.is_suppressed
+                            && !(pane.is_plugin && own_plugin_id == Some(pane.id))
                     }) {
                         let aliases = [
                             session.name.as_str(),
