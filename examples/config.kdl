@@ -2,6 +2,7 @@ plugins {
     zellij-palette location="file:__WASM__"
     zellij-palette-themes location="file:__WASM__" {
         palette "themes"
+        theme_dir "~/.config/zellij/themes"
     }
     zellij-palette-tools location="file:__WASM__" {
         category "Tools"

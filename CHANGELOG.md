@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The Themes palette now lists all 41 themes Zellij 0.44 ships built-in
+  (`ansi`, `ao`, `atelier`, `ayu-*`, `catppuccin-*`, `dracula`, `gruvbox-*`,
+  `nord`, `tokyo-night-*`, etc.) on top of any user theme files the
+  plugin is pointed at. Built-in and user themes appear in separate
+  `Built-in Themes` / `User Themes` groups, and a same-named user theme
+  shadows the built-in entry. The list is hard-coded to match Zellij
+  0.44's `include_dir!` set because zellij-tile 0.44 does not expose a
+  runtime API to enumerate themes; bump alongside the zellij-tile dep.
+- New `theme_dir` plugin parameter (set in the Zellij KDL alias block
+  alongside `palette` and `category`) tells the plugin where to scan
+  for user `*.kdl` theme files. Accepts absolute paths or `~/...`
+  expanded against the session `$HOME`. When unset, the User Themes
+  group is hidden and only built-ins are listed.
+- Theme names interpolated into the `reconfigure(...)` KDL fragment are
+  now escaped (`"` and `\`), so a user-supplied theme name with quotes
+  or backslashes can no longer break out of the KDL string value.
 - User config files can now be authored as TOML, YAML, or JSON. When
   multiple variants of the same name exist, the loader prefers TOML,
   then YAML, then JSON; a broken higher-priority file no longer
@@ -23,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shorter or taller than 20 rows could activate the wrong row.
 
 ### Changed
+- User theme discovery is now opt-in via the `theme_dir` plugin
+  parameter. The previous implicit scan of `~/.config/zellij/themes/`
+  has been removed because we cannot reliably reproduce Zellij's full
+  `ZELLIJ_CONFIG_DIR` / `config.kdl theme_dir` / XDG resolution from a
+  plugin (zellij-tile 0.44 exposes no `get_theme_dir()`, and parsing
+  `config.kdl` would need a KDL parser). Users who relied on the
+  implicit scan should add `theme_dir "~/.config/zellij/themes"` to
+  the `zellij-palette-themes` alias block — the bundled
+  `examples/config.kdl` shows the new shape.
 - Selection logic (`next_selectable`, `normalize_selection`, `list_offset`)
   moved to a new `selection` module as pure functions with dedicated unit
   tests. `State`'s methods now delegate to them. No behaviour change.

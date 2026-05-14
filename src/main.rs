@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use zellij_palette::fuzzy::filter_items;
+use zellij_palette::kdl::escape_kdl_string;
 use zellij_palette::model::{
     CommandAction, PaletteAction, PaletteId, PaletteItem, PaneTarget, ThemeAction,
 };
@@ -18,6 +19,55 @@ use zellij_tile::prelude::*;
 const SEARCH_ROW: usize = 1;
 const LIST_START_ROW: usize = 3;
 const FOOTER_ROWS: usize = 2;
+
+// Zellij 0.44.3 bakes these themes into the server binary via
+// `include_dir!("$CARGO_MANIFEST_DIR/assets/themes")` in
+// zellij-utils/src/consts.rs. Keep this list in sync when bumping the
+// zellij-tile dep — and remember the user can shadow any of these by
+// dropping a same-named file under ~/.config/zellij/themes/.
+const BUILTIN_THEMES: &[&str] = &[
+    "ansi",
+    "ao",
+    "atelier",
+    "ayu-dark",
+    "ayu-light",
+    "ayu-mirage",
+    "blade-runner",
+    "catppuccin-frappe",
+    "catppuccin-latte",
+    "catppuccin-macchiato",
+    "catppuccin-mocha",
+    "cyber-noir",
+    "dayfox",
+    "dracula",
+    "everforest-dark",
+    "everforest-light",
+    "flexoki-dark",
+    "gruber-darker",
+    "gruvbox-dark",
+    "gruvbox-light",
+    "iceberg-dark",
+    "iceberg-light",
+    "kanagawa",
+    "lucario",
+    "menace",
+    "molokai-dark",
+    "nightfox",
+    "night-owl",
+    "nord",
+    "onedark",
+    "one-half-dark",
+    "pencil-light",
+    "retro-wave",
+    "solarized-dark",
+    "solarized-light",
+    "terafox",
+    "tokyo-night",
+    "tokyo-night-dark",
+    "tokyo-night-light",
+    "tokyo-night-storm",
+    "vesper",
+];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ActivePalette {
@@ -47,6 +97,7 @@ struct State {
     home_dir: Option<PathBuf>,
     caller_cwd: Option<PathBuf>,
     root_category: Option<String>,
+    user_theme_dir: Option<String>,
     permission_state: PermissionState,
     message: Option<String>,
     last_rows: usize,
@@ -64,6 +115,11 @@ impl ZellijPlugin for State {
         ));
         self.caller_cwd = configuration.get("caller_cwd").map(PathBuf::from);
         self.root_category = configuration.get("category").cloned();
+        self.user_theme_dir = configuration
+            .get("theme_dir")
+            .map(String::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
         self.permission_state = PermissionState::Pending;
         self.message =
             Some("Approve the Zellij permission prompt to enable palette actions".to_owned());
@@ -159,7 +215,11 @@ impl State {
             let env_vars = get_session_environment_variables();
             self.home_dir = env_vars.get("HOME").map(PathBuf::from);
         }
-        self.user_config = load_user_config(self.home_dir.as_deref());
+        let theme_dir = self
+            .user_theme_dir
+            .as_deref()
+            .map(|raw| expand_user_path(raw, self.home_dir.as_deref()));
+        self.user_config = load_user_config(self.home_dir.as_deref(), theme_dir.as_deref());
     }
 
     fn refresh_sessions(&mut self) {
@@ -389,7 +449,9 @@ impl State {
             ThemeAction::Toggle => run_action(Action::ToggleTheme, BTreeMap::new()),
             ThemeAction::SetDark => run_action(Action::SetDarkTheme, BTreeMap::new()),
             ThemeAction::SetLight => run_action(Action::SetLightTheme, BTreeMap::new()),
-            ThemeAction::SetNamed(name) => reconfigure(format!("theme \"{name}\""), false),
+            ThemeAction::SetNamed(name) => {
+                reconfigure(format!("theme \"{}\"", escape_kdl_string(&name)), false)
+            }
         }
     }
 
@@ -849,15 +911,42 @@ impl State {
             .with_category("Appearance"),
         ];
 
-        if !self.user_config.theme_names.is_empty() {
-            items.push(PaletteItem::group("Named Themes"));
-            for theme_name in &self.user_config.theme_names {
-                items.push(PaletteItem::leaf(
-                    theme_name.clone(),
-                    PaletteAction::Theme(ThemeAction::SetNamed(theme_name.clone())),
+        // A user-supplied theme file shadows the built-in of the same
+        // name (Zellij merges user themes on top of the embedded set),
+        // so hide the built-in entry in that case.
+        let user_themes: std::collections::HashSet<&str> = self
+            .user_config
+            .theme_names
+            .iter()
+            .map(String::as_str)
+            .collect();
+
+        items.push(PaletteItem::group("Built-in Themes"));
+        for name in BUILTIN_THEMES {
+            if user_themes.contains(name) {
+                continue;
+            }
+            items.push(
+                PaletteItem::leaf(
+                    (*name).to_owned(),
+                    PaletteAction::Theme(ThemeAction::SetNamed((*name).to_owned())),
                 )
                 .with_icon("●")
-                .with_category("Appearance"));
+                .with_category("Appearance"),
+            );
+        }
+
+        if !self.user_config.theme_names.is_empty() {
+            items.push(PaletteItem::group("User Themes"));
+            for theme_name in &self.user_config.theme_names {
+                items.push(
+                    PaletteItem::leaf(
+                        theme_name.clone(),
+                        PaletteAction::Theme(ThemeAction::SetNamed(theme_name.clone())),
+                    )
+                    .with_icon("●")
+                    .with_category("Appearance"),
+                );
             }
         }
 
@@ -1029,6 +1118,22 @@ fn active_palette_from_config(palette: Option<&str>) -> ActivePalette {
         "themes" => ActivePalette::BuiltIn(PaletteId::Themes),
         custom => ActivePalette::Custom(custom.to_owned()),
     }
+}
+
+// The plugin lives in a wasm sandbox, so `~` is not expanded by the
+// shell or the host. Accept `~` and `~/...` against the HOME we got
+// from `get_session_environment_variables()`; pass anything else
+// through unchanged.
+fn expand_user_path(raw: &str, home: Option<&Path>) -> PathBuf {
+    if raw == "~" {
+        return home
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(raw));
+    }
+    if let (Some(rest), Some(home)) = (raw.strip_prefix("~/"), home) {
+        return home.join(rest);
+    }
+    PathBuf::from(raw)
 }
 
 fn pane_id(target: &PaneTarget) -> PaneId {
