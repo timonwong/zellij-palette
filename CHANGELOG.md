@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The Themes palette now lists all 41 themes Zellij 0.44 ships built-in
+  (`ansi`, `ao`, `atelier`, `ayu-*`, `catppuccin-*`, `dracula`, `gruvbox-*`,
+  `nord`, `tokyo-night-*`, etc.) on top of the existing scan of
+  `~/.config/zellij/themes/*.kdl`. Built-in and user themes appear in
+  separate `Built-in Themes` / `User Themes` groups, and a same-named
+  user theme shadows the built-in entry. The list is hard-coded to
+  match Zellij 0.44's `include_dir!` set because zellij-tile 0.44 does
+  not expose a runtime API to enumerate themes; bump alongside the
+  zellij-tile dep.
+- Theme names interpolated into the `reconfigure(...)` KDL fragment are
+  now escaped (`"` and `\`), so a user-supplied theme name with quotes
+  or backslashes can no longer break out of the KDL string value.
 - User config files can now be authored as TOML, YAML, or JSON. When
   multiple variants of the same name exist, the loader prefers TOML,
   then YAML, then JSON; a broken higher-priority file no longer

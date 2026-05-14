@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use zellij_palette::fuzzy::filter_items;
+use zellij_palette::kdl::escape_kdl_string;
 use zellij_palette::model::{
     CommandAction, PaletteAction, PaletteId, PaletteItem, PaneTarget, ThemeAction,
 };
@@ -18,6 +19,55 @@ use zellij_tile::prelude::*;
 const SEARCH_ROW: usize = 1;
 const LIST_START_ROW: usize = 3;
 const FOOTER_ROWS: usize = 2;
+
+// Zellij 0.44.3 bakes these themes into the server binary via
+// `include_dir!("$CARGO_MANIFEST_DIR/assets/themes")` in
+// zellij-utils/src/consts.rs. Keep this list in sync when bumping the
+// zellij-tile dep — and remember the user can shadow any of these by
+// dropping a same-named file under ~/.config/zellij/themes/.
+const BUILTIN_THEMES: &[&str] = &[
+    "ansi",
+    "ao",
+    "atelier",
+    "ayu-dark",
+    "ayu-light",
+    "ayu-mirage",
+    "blade-runner",
+    "catppuccin-frappe",
+    "catppuccin-latte",
+    "catppuccin-macchiato",
+    "catppuccin-mocha",
+    "cyber-noir",
+    "dayfox",
+    "dracula",
+    "everforest-dark",
+    "everforest-light",
+    "flexoki-dark",
+    "gruber-darker",
+    "gruvbox-dark",
+    "gruvbox-light",
+    "iceberg-dark",
+    "iceberg-light",
+    "kanagawa",
+    "lucario",
+    "menace",
+    "molokai-dark",
+    "nightfox",
+    "night-owl",
+    "nord",
+    "onedark",
+    "one-half-dark",
+    "pencil-light",
+    "retro-wave",
+    "solarized-dark",
+    "solarized-light",
+    "terafox",
+    "tokyo-night",
+    "tokyo-night-dark",
+    "tokyo-night-light",
+    "tokyo-night-storm",
+    "vesper",
+];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ActivePalette {
@@ -387,7 +437,9 @@ impl State {
             ThemeAction::Toggle => run_action(Action::ToggleTheme, BTreeMap::new()),
             ThemeAction::SetDark => run_action(Action::SetDarkTheme, BTreeMap::new()),
             ThemeAction::SetLight => run_action(Action::SetLightTheme, BTreeMap::new()),
-            ThemeAction::SetNamed(name) => reconfigure(format!("theme \"{name}\""), false),
+            ThemeAction::SetNamed(name) => {
+                reconfigure(format!("theme \"{}\"", escape_kdl_string(&name)), false)
+            }
         }
     }
 
@@ -849,15 +901,42 @@ impl State {
             .with_category("Appearance"),
         ];
 
-        if !self.user_config.theme_names.is_empty() {
-            items.push(PaletteItem::group("Named Themes"));
-            for theme_name in &self.user_config.theme_names {
-                items.push(PaletteItem::leaf(
-                    theme_name.clone(),
-                    PaletteAction::Theme(ThemeAction::SetNamed(theme_name.clone())),
+        // A user-supplied theme file shadows the built-in of the same
+        // name (Zellij merges user themes on top of the embedded set),
+        // so hide the built-in entry in that case.
+        let user_themes: std::collections::HashSet<&str> = self
+            .user_config
+            .theme_names
+            .iter()
+            .map(String::as_str)
+            .collect();
+
+        items.push(PaletteItem::group("Built-in Themes"));
+        for name in BUILTIN_THEMES {
+            if user_themes.contains(name) {
+                continue;
+            }
+            items.push(
+                PaletteItem::leaf(
+                    (*name).to_owned(),
+                    PaletteAction::Theme(ThemeAction::SetNamed((*name).to_owned())),
                 )
                 .with_icon("●")
-                .with_category("Appearance"));
+                .with_category("Appearance"),
+            );
+        }
+
+        if !self.user_config.theme_names.is_empty() {
+            items.push(PaletteItem::group("User Themes"));
+            for theme_name in &self.user_config.theme_names {
+                items.push(
+                    PaletteItem::leaf(
+                        theme_name.clone(),
+                        PaletteAction::Theme(ThemeAction::SetNamed(theme_name.clone())),
+                    )
+                    .with_icon("●")
+                    .with_category("Appearance"),
+                );
             }
         }
 

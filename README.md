@@ -9,7 +9,7 @@ It opens as a Zellij plugin pane, lets you fuzzy-search actions, and dispatches 
 - Searchable `Commands` palette with pane, tab, session, and appearance actions
 - `Find Pane` palette that jumps across sessions, tabs, and panes
 - `Move Pane` palette that sends the caller pane into another tab or a new tab
-- `Themes` palette for dark/light/toggle and user theme names from `~/.config/zellij/themes/*.kdl`
+- `Themes` palette grouped into **Theme Mode** (toggle / use dark / use light), **Built-in Themes** (the 41 themes Zellij 0.44 ships), and **User Themes** (anything under `~/.config/zellij/themes/*.kdl`). A same-named user theme shadows the built-in entry.
 - Custom commands from `~/.config/zellij-palette/commands.toml`
 - Custom palettes from `~/.config/zellij-palette/palettes/*.toml`
 - `hidden.toml`, `shortcuts.toml`, and `aliases.toml` overlays
@@ -87,6 +87,14 @@ There is a ready-to-edit example in [examples/config.kdl](examples/config.kdl).
 - Mouse wheel and hover update selection
 
 The plugin tracks the caller pane through Zellij's pane history, so actions such as `Move Pane`, `Toggle Fullscreen`, `Float / Embed Pane`, and `Close Pane` target the pane that was focused before the palette opened.
+
+### Theme switching
+
+Picking a theme dispatches `reconfigure("theme \"<name>\"", false)` against the live Zellij session. The change is immediate — no restart, no resurrect — and is *not* persisted to `~/.config/zellij/config.kdl`. Restarting Zellij brings back whatever theme `config.kdl` declares.
+
+The built-in theme list is hard-coded to match the 41 themes Zellij 0.44 bakes into its binary via `include_dir!`; the zellij-tile 0.44 SDK does not expose an API to enumerate them at runtime. User themes from `~/.config/zellij/themes/*.kdl` are scanned at load time and shadow same-named built-ins.
+
+`Toggle Dark / Light`, `Use Dark Theme`, and `Use Light Theme` map to Zellij's real `Action::ToggleTheme`, `Action::SetDarkTheme`, and `Action::SetLightTheme` — but those only do something visible when `theme_dark` *and* `theme_light` are both set in your Zellij config. Without that pair, they silently no-op.
 
 ## User config
 
