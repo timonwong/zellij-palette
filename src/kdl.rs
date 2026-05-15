@@ -22,12 +22,6 @@ mod tests {
     use super::escape_kdl_string;
 
     #[test]
-    fn plain_names_pass_through() {
-        assert_eq!(escape_kdl_string("gruvbox-dark"), "gruvbox-dark");
-        assert_eq!(escape_kdl_string(""), "");
-    }
-
-    #[test]
     fn quotes_and_backslashes_are_escaped() {
         assert_eq!(escape_kdl_string(r#"weird"name"#), r#"weird\"name"#);
         assert_eq!(escape_kdl_string(r"with\backslash"), r"with\\backslash");

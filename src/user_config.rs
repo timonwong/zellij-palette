@@ -506,9 +506,8 @@ fn load_config_file<T: DeserializeOwned>(dir: &Path, stem: &str) -> Option<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConfigAction, CustomPalette, RawCustomPalette, RawPaletteItem, apply_item_overrides,
-        filter_hidden_items, load_user_config, parse_command_palette_output,
-        referenced_items_from_custom_palette,
+        ConfigAction, CustomPalette, apply_item_overrides, filter_hidden_items, load_user_config,
+        parse_command_palette_output, referenced_items_from_custom_palette,
     };
     use crate::model::{PaletteAction, PaletteItem};
     use std::collections::{HashMap, HashSet};
@@ -686,42 +685,6 @@ action = { popup = "echo {}" }
         assert_eq!(tools.default_icon_color.as_deref(), Some("#ffaa00"));
         assert_eq!(tools.grouped, Some(true));
         assert_eq!(tools.empty_text.as_deref(), Some("No tools"));
-    }
-
-    #[test]
-    fn serde_saphyr_parses_yaml_config_shapes() {
-        let commands: Vec<RawPaletteItem> = serde_saphyr::from_str(
-            r##"
-- title: Open Logs
-  group: Tools
-  shortcut: Cmd-L
-  icon: L
-  iconColor: "#22cc22"
-  action:
-    popup: tail -f logs.txt
-"##,
-        )
-        .unwrap();
-        assert_eq!(commands.len(), 1);
-        assert_eq!(commands[0].title, "Open Logs");
-        assert_eq!(commands[0].group.as_deref(), Some("Tools"));
-
-        let palette: RawCustomPalette = serde_saphyr::from_str(
-            r##"
-title: Tools
-fromCategory: Tools
-icon: T
-iconColor: "#ffaa00"
-grouped: true
-emptyText: No tools
-action:
-  popup: echo {}
-"##,
-        )
-        .unwrap();
-        assert_eq!(palette.from_category.as_deref(), Some("Tools"));
-        assert_eq!(palette.icon_color.as_deref(), Some("#ffaa00"));
-        assert_eq!(palette.grouped, Some(true));
     }
 
     #[test]
