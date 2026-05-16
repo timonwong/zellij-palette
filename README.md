@@ -40,6 +40,15 @@ The example below loads the plugin directly from the GitHub release
 artifact — no manual download needed. Browse all versions at
 <https://github.com/timonwong/zellij-palette/releases>.
 
+### Download a release build
+
+Download the plugin binary from the [latest release](https://github.com/timonwong/zellij-palette/releases/latest):
+
+```bash
+mkdir -p ~/.config/zellij/plugins && \
+  curl -L "https://github.com/timonwong/zellij-palette/releases/latest/download/zellij-palette.wasm" -o ~/.config/zellij/plugins/zellij-palette.wasm
+```
+
 ### Build from source
 
 If you'd rather build locally:
@@ -72,7 +81,7 @@ If your local Rust install still points at an older repo toolchain, run
 `mise install -f rust` once so `mise` can reconcile the target and
 components onto the updated toolchain.
 
-## Bind It In Zellij
+## Zellij config
 
 Add a keybinding that launches the plugin as a floating pane.
 
@@ -153,6 +162,29 @@ Picking a theme dispatches `reconfigure("theme \"<name>\"", false)` against the 
 The built-in theme list is hard-coded to match the 41 themes Zellij 0.44 bakes into its binary via `include_dir!`; the zellij-tile 0.44 SDK does not expose an API to enumerate them at runtime. User themes are scanned from whatever directory the `theme_dir` plugin parameter points at (see the launch-keys list above) — the plugin does not try to mirror Zellij's `ZELLIJ_CONFIG_DIR` / `theme_dir` config / XDG-fallback resolution, since that would require parsing `config.kdl`. Pass the path explicitly. User entries shadow same-named built-ins.
 
 `Toggle Dark / Light`, `Use Dark Theme`, and `Use Light Theme` map to Zellij's real `Action::ToggleTheme`, `Action::SetDarkTheme`, and `Action::SetLightTheme` — but those only do something visible when `theme_dark` *and* `theme_light` are both set in your Zellij config. Without that pair, they silently no-op.
+
+## Caveats
+
+### Floating panes appear as a group
+
+`floating true` puts the palette in Zellij's floating layer. Zellij toggles
+floating-pane visibility per tab, all at once — there's no "show only this one"
+anywhere, not in the keybind actions, not in the plugin API. So opening the
+palette also brings back every other floating pane in that tab. That's Zellij's
+floating model, not this plugin (it never touches the floating toggle itself).
+
+If you'd rather the launcher leave your other floating panes alone, bind it with
+`floating false`. The palette then opens tiled — a normal pane that splits the
+current layout instead of floating over it:
+
+```kdl
+bind "Ctrl Shift p" {
+    LaunchOrFocusPlugin "zellij-palette" {
+        floating false
+        move_to_focused_tab true
+    }
+}
+```
 
 ## User config
 
